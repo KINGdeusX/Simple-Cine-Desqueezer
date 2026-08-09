@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller / Build outputs
+build/
+dist/
+*.manifest
+
+# Environment and IDE settings
+.venv/
+env/
+.idea/
+.vscode/
+.claude/
+
+# Local application state
+state.json
+
+# Temporary files
+*.tmp
+*.log

@@ -1,0 +1,58 @@
+# Simple Cine Desqueezer
+
+An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema files using `exiftool`.
+
+## Features
+
+- **Preset Lens Ratios**: Built-in support for popular anamorphic squeeze factors:
+  - `1.25x` — Sirui / Entry Anamorphic Lenses
+  - `1.33x` — Canon C70 / C300 / C500 / Sigma Cine / DJI
+  - `1.5x` — Kowa / Vintage Anamorphic / Iscorama 36
+  - `1.6x` — Lomo Square Front / Vintage Glass
+  - `1.79x` — RED DSMC Anamorphic Mode
+  - `1.8x` — Panasonic GH5/GH6 Anamorphic Mode
+  - `2.0x` — Panavision / Hawk / Cooke / Classic Anamorphic
+  - `2.39x` — Ultra Panavision 70
+  - Custom X/Y Squeeze ratios
+- **Non-blocking Multi-threaded Processing**: Uses Python worker threads and ExifTool to batch process DNG files smoothly without freezing the UI.
+- **Batch Processing**: Select input directories containing `.dng` / `.DNG` files and automatically write updated metadata to target output directories.
+- **ExifTool Integration**: Automatic detection or manual configuration of `exiftool.exe`.
+
+## Requirements
+
+- **Python 3.8+**
+- **PyQt6** (`pip install PyQt6`)
+- **ExifTool** (Placed in the application directory or path specified in app settings)
+
+## Quick Start
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/KINGdeusX/Simple-Cine-Desqueezer.git
+   cd Simple-Cine-Desqueezer
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip install PyQt6
+   ```
+
+3. **Run the application**:
+   ```bash
+   python app.py
+   ```
+
+## Building Executable
+
+To build a standalone executable using PyInstaller:
+
+```bash
+pip install pyinstaller
+pyinstaller app.spec
+```
+
+The output executable will be generated inside the `dist/` directory.
+
+## License
+
+MIT License
