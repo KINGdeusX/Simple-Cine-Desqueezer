@@ -1,0 +1,11 @@
+# Simple Cine Desqueezer — Dependencies
+# Install with: pip install -r requirements.txt
+
+# GUI Framework
+PyQt6>=6.5.0
+
+# Image Processing (Icon support & utilities)
+Pillow>=10.0.0
+
+# Optional: Packaging / Build standalone executable
+pyinstaller>=6.0.0

@@ -1,5 +1,9 @@
 # Simple Cine Desqueezer
 
+<p align="center">
+  <img src="icon.png" alt="Simple Cine Desqueezer Logo" width="180"/>
+</p>
+
 An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema files using `exiftool`.
 
 ## Features
@@ -14,6 +18,7 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
   - `2.0x` — Panavision / Hawk / Cooke / Classic Anamorphic
   - `2.39x` — Ultra Panavision 70
   - Custom X/Y Squeeze ratios
+- **Gold & Black UI with Custom Icon**: Sleek modern interface with dedicated application icon.
 - **Non-blocking Multi-threaded Processing**: Uses Python worker threads and ExifTool to batch process DNG files smoothly without freezing the UI.
 - **Batch Processing**: Select input directories containing `.dng` / `.DNG` files and automatically write updated metadata to target output directories.
 - **ExifTool Integration**: Automatic detection or manual configuration of `exiftool.exe`.
@@ -21,7 +26,6 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
 ## Requirements
 
 - **Python 3.8+**
-- **PyQt6** (`pip install PyQt6`)
 - **ExifTool** (Placed in the application directory or path specified in app settings)
 
 ## Quick Start
@@ -34,7 +38,7 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
 
 2. **Install dependencies**:
    ```bash
-   pip install PyQt6
+   pip install -r requirements.txt
    ```
 
 3. **Run the application**:
@@ -47,7 +51,6 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
 To build a standalone executable using PyInstaller:
 
 ```bash
-pip install pyinstaller
 pyinstaller app.spec
 ```
 

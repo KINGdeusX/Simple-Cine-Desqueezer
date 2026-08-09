@@ -10,7 +10,7 @@ from pathlib import Path
 import os
 import subprocess
 import shutil
-from pathlib import Path
+import ctypes
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -211,6 +211,12 @@ class DesqueezeApp(QMainWindow):
         self.setMinimumWidth(680)
         self.setMaximumWidth(900)
         self.resize(720, 560)
+
+        icon_path = Path(__file__).parent / "icon.png"
+        if not icon_path.exists():
+            icon_path = Path(__file__).parent / "icon.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self._apply_stylesheet()
 
@@ -579,6 +585,12 @@ class DesqueezeApp(QMainWindow):
 # Entry point
 # ─────────────────────────────────────────────
 def main():
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("kingdeusx.simplecinedesqueezer.1.0")
+        except Exception:
+            pass
+
     # High-DPI support
     if hasattr(Qt, "AA_EnableHighDpiScaling"):
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
@@ -587,6 +599,12 @@ def main():
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    icon_path = Path(__file__).parent / "icon.png"
+    if not icon_path.exists():
+        icon_path = Path(__file__).parent / "icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     win = DesqueezeApp()
     win.show()
