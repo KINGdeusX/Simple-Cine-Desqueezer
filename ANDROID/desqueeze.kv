@@ -1,0 +1,396 @@
+#:import dp kivy.metrics.dp
+#:import sp kivy.metrics.sp
+
+# Palette lifted straight from the desktop app's Qt stylesheet:
+#   background #141414 | gold #f0a500 | text #e0e0e0 | labels #888 | log #0d0d0d
+
+<SectionLabel@Label>:
+    size_hint_y: None
+    height: dp(16)
+    halign: 'left'
+    valign: 'bottom'
+    color: 0.53, 0.53, 0.53, 1
+    font_size: sp(10)
+    font_name: 'desqueeze-mono'
+    text_size: self.width, None
+
+<Divider@Widget>:
+    size_hint_y: None
+    height: dp(1)
+    canvas:
+        Color:
+            rgba: 0.165, 0.165, 0.165, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+<Field@BoxLayout>:
+    # the sunken #1e1e1e input box used for paths and numbers
+    size_hint_y: None
+    height: dp(38)
+    canvas.before:
+        Color:
+            rgba: 0.118, 0.118, 0.118, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: 0.18, 0.18, 0.18, 1
+        Line:
+            width: 1
+            rectangle: self.x, self.y, self.width, self.height
+
+<PathLabel@Label>:
+    halign: 'left'
+    valign: 'middle'
+    shorten: True
+    shorten_from: 'left'
+    font_size: sp(12)
+    font_name: 'desqueeze-mono'
+    color: 0.88, 0.88, 0.88, 1
+    text_size: self.width - dp(16), self.height
+
+<GhostButton@Button>:
+    size_hint_x: None
+    width: dp(84)
+    background_normal: ''
+    background_down: ''
+    background_color: (0.102, 0.102, 0.102, 1) if self.state == 'normal' else (0.18, 0.18, 0.18, 1)
+    color: (0.8, 0.8, 0.8, 1) if not self.disabled else (0.27, 0.27, 0.27, 1)
+    font_size: sp(12)
+    font_name: 'desqueeze-mono'
+    canvas.after:
+        Color:
+            rgba: 0.2, 0.2, 0.2, 1
+        Line:
+            width: 1
+            rectangle: self.x, self.y, self.width, self.height
+
+<RunButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: (0.941, 0.647, 0.0, 1) if not self.disabled else (0.227, 0.227, 0.227, 1)
+    color: (0, 0, 0, 1) if not self.disabled else (0.4, 0.4, 0.4, 1)
+    bold: True
+    font_size: sp(15)
+    font_name: 'desqueeze-mono'
+
+<CancelButton@Button>:
+    background_normal: ''
+    background_down: ''
+    background_color: (0.165, 0.102, 0.102, 1) if not self.disabled else (0.118, 0.118, 0.118, 1)
+    color: (0.753, 0.251, 0.251, 1) if not self.disabled else (0.27, 0.27, 0.27, 1)
+    font_size: sp(12)
+    font_name: 'desqueeze-mono'
+    canvas.after:
+        Color:
+            rgba: (0.353, 0.165, 0.165, 1) if not self.disabled else (0.133, 0.133, 0.133, 1)
+        Line:
+            width: 1
+            rectangle: self.x, self.y, self.width, self.height
+
+<NumberInput@TextInput>:
+    multiline: False
+    write_tab: False
+    input_filter: 'float'
+    font_size: sp(13)
+    font_name: 'desqueeze-mono'
+    background_normal: ''
+    background_active: ''
+    background_color: 0.118, 0.118, 0.118, 1
+    foreground_color: 0.88, 0.88, 0.88, 1
+    cursor_color: 0.941, 0.647, 0.0, 1
+    selection_color: 0.941, 0.647, 0.0, 0.45
+    padding: [dp(8), dp(9), dp(8), dp(9)]
+
+<NameInput@NumberInput>:
+    input_filter: None
+
+<PresetOption@SpinnerOption>:
+    background_normal: ''
+    background_down: ''
+    background_color: (0.118, 0.118, 0.118, 1) if self.state == 'normal' else (0.941, 0.647, 0.0, 1)
+    color: (0.88, 0.88, 0.88, 1) if self.state == 'normal' else (0, 0, 0, 1)
+    font_size: sp(12)
+    font_name: 'desqueeze-mono'
+    halign: 'left'
+    valign: 'middle'
+    text_size: self.width - dp(20), None
+    size_hint_y: None
+    height: dp(46)
+
+<PresetSpinner@Spinner>:
+    option_cls: 'PresetOption'
+    background_normal: ''
+    background_down: ''
+    background_color: 0.118, 0.118, 0.118, 1
+    color: 0.88, 0.88, 0.88, 1
+    font_size: sp(12)
+    font_name: 'desqueeze-mono'
+    halign: 'left'
+    valign: 'middle'
+    shorten: True
+    shorten_from: 'right'
+    text_size: self.width - dp(28), None
+    canvas.after:
+        Color:
+            rgba: 0.18, 0.18, 0.18, 1
+        Line:
+            width: 1
+            rectangle: self.x, self.y, self.width, self.height
+        Color:
+            rgba: 0.53, 0.53, 0.53, 1
+        Triangle:
+            points:
+                [self.right - dp(20), self.center_y + dp(3), \
+                self.right - dp(10), self.center_y + dp(3), \
+                self.right - dp(15), self.center_y - dp(3)]
+
+<GoldProgress@Widget>:
+    value: 0
+    size_hint_y: None
+    height: dp(6)
+    canvas:
+        Color:
+            rgba: 0.118, 0.118, 0.118, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        Color:
+            rgba: 0.941, 0.647, 0.0, 1
+        Rectangle:
+            pos: self.pos
+            size: self.width * (max(0, min(100, self.value)) / 100.0), self.height
+
+<LogLine@Label>:
+    size_hint_y: None
+    height: dp(15)
+    halign: 'left'
+    valign: 'middle'
+    shorten: True
+    shorten_from: 'left'
+    font_size: sp(11)
+    font_name: 'desqueeze-mono'
+    color: 0.53, 0.53, 0.53, 1
+    text_size: self.width - dp(12), self.height
+
+
+# --- the screen -------------------------------------------------------------
+
+<Root>:
+    orientation: 'horizontal' if app.wide else 'vertical'
+    # extra top/bottom padding keeps content clear of the system bars
+    padding: [dp(16), dp(16) + app.inset_top, dp(16), dp(12) + app.inset_bottom]
+    spacing: dp(12)
+    canvas.before:
+        Color:
+            rgba: 0.078, 0.078, 0.078, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    # ---- controls column
+    # Always scrollable, so a short screen (small phone, split-screen, landscape)
+    # can never clip the controls no matter what the breakpoint decides.
+    ScrollView:
+        size_hint_x: 0.55 if app.wide else 1
+        size_hint_y: None
+        pos_hint: {'top': 1}
+        # Take exactly the height the controls need, so RUN is never half cut
+        # off, but never more than the screen minus a usable strip for the log.
+        height:
+            min(controls.minimum_height, root.height - root.padding[1] \
+            - root.padding[3] - (0 if app.wide else dp(150)))
+        do_scroll_x: False
+        bar_width: dp(3)
+        bar_color: 0.2, 0.2, 0.2, 1
+        effect_cls: 'ScrollEffect'
+
+        BoxLayout:
+            id: controls
+            orientation: 'vertical'
+            spacing: dp(8)
+            size_hint_y: None
+            height: self.minimum_height
+
+            Label:
+                text: 'DESQUEEZE'
+                size_hint_y: None
+                height: dp(38)
+                halign: 'left'
+                valign: 'middle'
+                bold: True
+                font_size: sp(26)
+                font_name: 'desqueeze-mono'
+                color: 0.941, 0.647, 0.0, 1
+                text_size: self.width, self.height
+
+            Label:
+                text: 'Anamorphic Desqueezer  -  RAW / TIFF / PNG / JPEG'
+                size_hint_y: None
+                height: dp(16)
+                halign: 'left'
+                valign: 'top'
+                font_size: sp(11)
+                font_name: 'desqueeze-mono'
+                color: 0.4, 0.4, 0.4, 1
+                text_size: self.width, self.height
+
+            Divider:
+
+            SectionLabel:
+                text: 'ENGINE'
+            Field:
+                PathLabel:
+                    text: app.engine_status
+                    shorten_from: 'right'
+                    color: (0.941, 0.647, 0.0, 1) if app.engine_ready else (0.753, 0.251, 0.251, 1)
+
+            SectionLabel:
+                text: 'IMAGES  (RAW / TIFF / PNG / JPEG)'
+            Field:
+                spacing: dp(6)
+                padding: [0, 0, 0, 0]
+                PathLabel:
+                    text: app.source_text
+                    shorten_from: 'right'
+                GhostButton:
+                    text: 'Select'
+                    disabled: app.is_running
+                    on_release: app.browse_source()
+
+            SectionLabel:
+                text: 'OUTPUT FOLDER  (remembered)'
+            Field:
+                spacing: dp(6)
+                PathLabel:
+                    text: app.dest_text
+                GhostButton:
+                    text: 'Browse'
+                    disabled: app.is_running
+                    on_release: app.browse_dest()
+
+            BoxLayout:
+                size_hint_y: None
+                height: dp(38)
+                disabled: app.is_running
+                spacing: dp(8)
+                Label:
+                    text: 'Subfolder:'
+                    size_hint_x: None
+                    width: dp(88)
+                    halign: 'left'
+                    valign: 'middle'
+                    font_size: sp(11)
+                    font_name: 'desqueeze-mono'
+                    color: 0.53, 0.53, 0.53, 1
+                    text_size: self.width, self.height
+                NameInput:
+                    id: dest_name
+                    text: app.dest_folder_name
+                    on_text: app.dest_folder_name = self.text
+
+            SectionLabel:
+                text: 'SQUEEZE RATIO  -  Lens Preset'
+            PresetSpinner:
+                id: preset
+                size_hint_y: None
+                height: dp(42)
+                text: app.preset_label
+                values: app.preset_labels
+                disabled: app.is_running
+                on_text: app.select_preset(self.text)
+
+            BoxLayout:
+                size_hint_y: None
+                height: dp(38) if app.is_custom else 0
+                opacity: 1 if app.is_custom else 0
+                disabled: not app.is_custom or app.is_running
+                spacing: dp(8)
+                Label:
+                    text: 'Squeeze X:'
+                    size_hint_x: None
+                    width: dp(84)
+                    halign: 'left'
+                    valign: 'middle'
+                    font_size: sp(11)
+                    font_name: 'desqueeze-mono'
+                    color: 0.53, 0.53, 0.53, 1
+                    text_size: self.width, self.height
+                NumberInput:
+                    size_hint_x: None
+                    width: dp(78)
+                    text: app.custom_x
+                    on_text: app.custom_x = self.text
+                Label:
+                    text: 'Y (usually 1.0):'
+                    size_hint_x: None
+                    width: dp(118)
+                    halign: 'right'
+                    valign: 'middle'
+                    font_size: sp(11)
+                    font_name: 'desqueeze-mono'
+                    color: 0.53, 0.53, 0.53, 1
+                    text_size: self.width, self.height
+                NumberInput:
+                    size_hint_x: None
+                    width: dp(78)
+                    text: app.custom_y
+                    on_text: app.custom_y = self.text
+                Widget:
+
+            Divider:
+
+            BoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(8)
+                RunButton:
+                    text: 'RUN DESQUEEZE'
+                    disabled: app.is_running
+                    on_release: app.start_run()
+                CancelButton:
+                    text: 'CANCEL'
+                    size_hint_x: None
+                    width: dp(110)
+                    disabled: not app.is_running
+                    on_release: app.cancel_run()
+
+            GoldProgress:
+                value: app.progress_value
+
+    # ---- log column
+    BoxLayout:
+        orientation: 'vertical'
+        spacing: dp(6)
+        size_hint_x: 0.45 if app.wide else 1
+        # takes whatever the controls do not need
+        size_hint_y: 1
+
+        SectionLabel:
+            text: 'LOG'
+        RecycleView:
+            id: log_view
+            viewclass: 'LogLine'
+            scroll_type: ['bars', 'content']
+            bar_width: dp(4)
+            bar_color: 0.2, 0.2, 0.2, 1
+            bar_inactive_color: 0.13, 0.13, 0.13, 1
+            canvas.before:
+                Color:
+                    rgba: 0.051, 0.051, 0.051, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+                Color:
+                    rgba: 0.133, 0.133, 0.133, 1
+                Line:
+                    width: 1
+                    rectangle: self.x, self.y, self.width, self.height
+            RecycleBoxLayout:
+                orientation: 'vertical'
+                padding: [dp(6), dp(6)]
+                default_size: None, dp(15)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height

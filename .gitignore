@@ -21,3 +21,13 @@ state.json
 # Temporary files
 *.tmp
 *.log
+
+# Android build (see ANDROID/README.md) -- intermediates only.
+# The shipped ANDROID/*.apk is deliberately committed.
+ANDROID/.buildozer/
+ANDROID/bin/
+ANDROID/logs/
+ANDROID/data/*.ttf
+ANDROID/icon.png
+ANDROID/icon_foreground.png
+ANDROID/presplash.png

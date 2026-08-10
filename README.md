@@ -23,6 +23,19 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
 - **Batch Processing**: Select input directories containing `.dng` / `.DNG` files and automatically write updated metadata to target output directories.
 - **ExifTool Integration**: Automatic detection or manual configuration of `exiftool.exe`.
 
+## Android
+
+There is now an Android port in [`ANDROID/`](ANDROID/) — same presets, same
+gold-on-black look, built with Kivy, shipping a ready-to-sideload `.apk`.
+
+It also goes further than the desktop app: alongside DNG it accepts **Sony ARW**
+and **Nikon NEF** raw (tagged the same way, verified byte-for-byte against real
+ExifTool) and **PNG / JPEG / TIFF**, whose pixels are physically stretched so
+they are genuinely desqueezed in any viewer. You select individual files rather
+than a folder. See [`ANDROID/README.md`](ANDROID/README.md).
+
+The desktop app below is unchanged and developed independently of it.
+
 ## Requirements
 
 - **Python 3.8+**
