@@ -34,6 +34,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import urllib.request
@@ -56,16 +57,54 @@ def fetch(url):
         return response.read()
 
 
-def fetch_first(urls, what):
-    """Try each mirror in turn; report them all if none answers."""
+def fetch_first(urls, what, validate=None):
+    """Try each mirror in turn; report them all if none answers.
+
+    ``validate`` guards against the classic download-host failure: answering
+    200 with an HTML interstitial or a rate-limit page instead of the file.
+    Without it a mirror that "succeeds" hands back markup and the caller
+    explodes on it, which is exactly how the first CI run died.
+    """
     problems = []
     for url in urls:
         try:
-            return fetch(url), url
+            blob = fetch(url)
         except Exception as exc:
             problems.append('  %s -> %s' % (url, exc))
+            continue
+        if validate is not None and not validate(blob):
+            problems.append('  %s -> served %d bytes that are not the expected '
+                            'archive (a login or interstitial page?)'
+                            % (url, len(blob)))
+            continue
+        return blob, url
     raise SystemExit('could not download %s. Tried:\n%s'
                      % (what, '\n'.join(problems)))
+
+
+def looks_like_zip(blob):
+    return len(blob) > 1000 and blob[:2] == b'PK'
+
+
+def looks_like_tar_xz(blob):
+    return len(blob) > 1000 and blob[:6] == b'\xfd7zXZ\x00'
+
+
+def sourceforge_mirrors(project, filename):
+    """Every way SourceForge will hand over the same file.
+
+    The canonical /download link often answers with an interstitial rather than
+    the bytes, so the direct mirror hosts are tried as well.
+    """
+    return [
+        'https://downloads.sourceforge.net/project/%s/%s' % (project, filename),
+        'https://master.dl.sourceforge.net/project/%s/%s?viasf=1'
+        % (project, filename),
+        'https://phoenixnap.dl.sourceforge.net/project/%s/%s?viasf=1'
+        % (project, filename),
+        'https://sourceforge.net/projects/%s/files/%s/download'
+        % (project, filename),
+    ]
 
 
 def latest_exiftool_version():
@@ -111,25 +150,113 @@ def extract_zip(blob, destination, wanted=None, flatten=False):
 
 # --- exiftool ---------------------------------------------------------------
 
+def exiftool_windows_url():
+    """Ask exiftool.org which Windows build is current, and where it lives.
+
+    The website is the authority on the version, but it does not host the zip
+    itself -- it links to SourceForge.  Scraping the link keeps us pointed at
+    whatever upstream currently publishes instead of guessing a filename.
+    """
+    import re
+    try:
+        page = fetch('https://exiftool.org/').decode('utf-8', 'replace')
+    except Exception:
+        page = ''
+    match = re.search(r'href="([^"]*exiftool-([0-9.]+)_64\.zip[^"]*)"', page)
+    if match:
+        return match.group(1), match.group(2)
+    version = latest_exiftool_version()
+    return None, version
+
+
+def exiftool_from_chocolatey(destination):
+    """Last resort on Windows: let Chocolatey fetch it.
+
+    GitHub's Windows runners ship Chocolatey, and it publishes an ExifTool
+    package, so this keeps the build working on days when SourceForge is
+    refusing automated downloads.
+    """
+    if not sys.platform.startswith('win'):
+        return None
+    choco = shutil.which('choco')
+    if not choco:
+        return None
+    print('  falling back to Chocolatey for ExifTool')
+    result = subprocess.run([choco, 'install', 'exiftool', '-y',
+                             '--no-progress', '--limit-output'],
+                            capture_output=True, text=True)
+    if result.returncode not in (0, 1641, 3010):
+        print('  chocolatey failed: %s' % (result.stdout or '')[-400:],
+              file=sys.stderr)
+        return None
+
+    found = shutil.which('exiftool')
+    if not found:
+        for root in (r'C:\ProgramData\chocolatey\bin',
+                     r'C:\ProgramData\chocolatey\lib\exiftool\tools'):
+            for folder, _subfolders, files in os.walk(root):
+                for name in files:
+                    if name.lower() == 'exiftool.exe':
+                        found = os.path.join(folder, name)
+                        break
+                if found:
+                    break
+            if found:
+                break
+    if not found:
+        return None
+
+    target = os.path.join(destination, 'exiftool')
+    os.makedirs(target, exist_ok=True)
+    # Copy the whole tools folder: the standalone build needs its Perl tree
+    # beside the executable.
+    source_dir = os.path.dirname(os.path.realpath(found))
+    for entry in os.listdir(source_dir):
+        source = os.path.join(source_dir, entry)
+        destination_path = os.path.join(target, entry)
+        if os.path.isdir(source):
+            shutil.copytree(source, destination_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, destination_path)
+    if not os.path.exists(os.path.join(target, 'exiftool.exe')):
+        shutil.copy2(os.path.realpath(found),
+                     os.path.join(target, 'exiftool.exe'))
+    return 'chocolatey'
+
+
 def exiftool_windows(destination):
     """The standalone Windows build: exiftool.exe with its own Perl runtime.
 
     This is what makes the app self-contained on Windows -- no Perl install, no
-    hunting for a path.  Only exiftool.org and its SourceForge mirror publish
-    it; the GitHub repository carries the Perl source, which would need a Perl
-    interpreter and so is no use for packaging.
+    hunting for a path.  The GitHub repository only carries the Perl source,
+    which needs an interpreter and so is no use for packaging.
     """
-    version = latest_exiftool_version()
-    blob, _url = fetch_first([
-        'https://exiftool.org/exiftool-%s_64.zip' % version,
-        'https://sourceforge.net/projects/exiftool/files/'
-        'exiftool-%s_64.zip/download' % version,
-        'https://exiftool.org/exiftool-%s.zip' % version,
-    ], 'the ExifTool %s Windows build' % version)
+    linked, version = exiftool_windows_url()
+    filename = 'exiftool-%s_64.zip' % version
+    candidates = []
+    if linked:
+        candidates.append(linked)
+    candidates += sourceforge_mirrors('exiftool', filename)
+    candidates.append('https://exiftool.org/%s' % filename)
 
     target = os.path.join(destination, 'exiftool')
     shutil.rmtree(target, ignore_errors=True)
     os.makedirs(target, exist_ok=True)
+
+    try:
+        blob, _url = fetch_first(candidates,
+                                 'the ExifTool %s Windows build' % version,
+                                 validate=looks_like_zip)
+    except SystemExit as problem:
+        if exiftool_from_chocolatey(destination):
+            print('  exiftool (via Chocolatey)')
+            return version
+        raise SystemExit('%s\n\nExifTool is required: it is what writes '
+                         'DefaultScale into raw files. Download %s by hand and '
+                         'unzip it into %s so that exiftool.exe sits directly '
+                         'inside, then run this script again.'
+                         % (problem, filename, target))
+
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         names = [m.filename for m in archive.infolist() if not m.is_dir()]
         root = os.path.commonprefix(names)
@@ -165,9 +292,10 @@ def exiftool_linux(destination):
     reachable from any network, including CI sandboxes that block the website.
     """
     version = latest_exiftool_version()
-    blob, _url = fetch_first([
-        'https://github.com/exiftool/exiftool/archive/refs/tags/%s.tar.gz' % version,
-    ], 'the ExifTool %s source' % version)
+    blob, _url = fetch_first(
+        ['https://github.com/exiftool/exiftool/archive/refs/tags/%s.tar.gz'
+         % version],
+        'the ExifTool %s source' % version)
 
     target = os.path.join(destination, 'exiftool')
     shutil.rmtree(target, ignore_errors=True)
@@ -197,7 +325,9 @@ def ffmpeg_windows(destination):
             break
     if asset is None:
         raise SystemExit('could not find an FFmpeg full build')
-    blob = fetch(asset['browser_download_url'])
+    blob, _url = fetch_first([asset['browser_download_url']],
+                             'the FFmpeg Windows build',
+                             validate=looks_like_zip)
 
     target = os.path.join(destination, 'ffmpeg')
     shutil.rmtree(target, ignore_errors=True)
