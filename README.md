@@ -28,11 +28,14 @@ An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema
 There is now an Android port in [`ANDROID/`](ANDROID/) — same presets, same
 gold-on-black look, built with Kivy, shipping a ready-to-sideload `.apk`.
 
-It also goes further than the desktop app: alongside DNG it accepts **Sony ARW**
+It also goes further than the desktop app. Alongside DNG it accepts **Sony ARW**
 and **Nikon NEF** raw (tagged the same way, verified byte-for-byte against real
-ExifTool) and **PNG / JPEG / TIFF**, whose pixels are physically stretched so
-they are genuinely desqueezed in any viewer. You select individual files rather
-than a folder. See [`ANDROID/README.md`](ANDROID/README.md).
+ExifTool); **PNG / JPEG / TIFF**, whose pixels are physically stretched so they
+are genuinely desqueezed in any viewer; and **MP4 / MOV video**, which gets the
+`pasp` pixel-aspect atom written losslessly, or can be re-encoded to HEVC at the
+stretched size using the phone's hardware encoder. Photos and video have
+separate tabs, and you select individual files rather than a folder.
+See [`ANDROID/README.md`](ANDROID/README.md).
 
 The desktop app below is unchanged and developed independently of it.
 

@@ -164,6 +164,34 @@ class AwkwardInputs(unittest.TestCase):
                     image_engine.resize_desqueeze(data, 'a.png', x, y)
 
 
+class OutputMimeTypes(unittest.TestCase):
+    """SAF renames files to match the MIME type it is given.
+
+    Getting this wrong is invisible on a desktop and obvious on a phone: a clip
+    created with a DNG MIME type lands as ``clip.mp4.dng``.  So every extension
+    the app accepts must map to a MIME that implies that same extension.
+    """
+
+    def test_every_supported_extension_has_a_mime(self):
+        import storage
+        for extension in formats.SUPPORTED_EXTENSIONS:
+            with self.subTest(extension=extension):
+                mime = storage.mime_for('example' + extension)
+                self.assertNotEqual(mime, storage.DEFAULT_MIME,
+                                    '%s falls back to the generic type, so the '
+                                    'provider will rename the file' % extension)
+
+    def test_video_extensions_get_video_mimes(self):
+        import storage
+        self.assertEqual(storage.mime_for('a.mp4'), 'video/mp4')
+        self.assertEqual(storage.mime_for('a.MOV'), 'video/quicktime')
+
+    def test_default_is_not_a_real_format(self):
+        import storage
+        # a concrete default would silently rename anything unrecognised
+        self.assertEqual(storage.DEFAULT_MIME, 'application/octet-stream')
+
+
 class FormatRouting(unittest.TestCase):
     """The dispatch table is what decides tag-write vs pixel-resize."""
 
@@ -175,12 +203,32 @@ class FormatRouting(unittest.TestCase):
         for name in ('a.png', 'b.JPG', 'c.jpeg', 'd.tif', 'e.TIFF'):
             self.assertEqual(formats.kind_of(name), formats.KIND_PIXEL, name)
 
+    def test_video_formats_take_the_video_path(self):
+        for name in ('a.mp4', 'b.MOV', 'c.m4v'):
+            self.assertEqual(formats.kind_of(name), formats.KIND_VIDEO, name)
+
     def test_everything_else_is_unsupported(self):
-        for name in ('a.txt', 'b.mp4', 'c.cr2', 'noextension', ''):
+        # .cr2 is Canon raw, which the DefaultScale writer has not been checked
+        # against; .mkv and .avi are containers the pasp writer cannot rewrite
+        for name in ('a.txt', 'b.mkv', 'c.cr2', 'd.avi', 'noextension', ''):
             self.assertIsNone(formats.kind_of(name), name)
 
-    def test_raw_and_pixel_sets_do_not_overlap(self):
-        self.assertFalse(set(formats.RAW_EXTENSIONS) & set(formats.PIXEL_EXTENSIONS))
+    def test_the_three_sets_do_not_overlap(self):
+        raw = set(formats.RAW_EXTENSIONS)
+        pixel = set(formats.PIXEL_EXTENSIONS)
+        video = set(formats.VIDEO_EXTENSIONS)
+        self.assertFalse(raw & pixel)
+        self.assertFalse(raw & video)
+        self.assertFalse(pixel & video)
+
+    def test_tabs_partition_the_supported_formats(self):
+        """Every accepted file belongs to exactly one tab."""
+        for extension in formats.SUPPORTED_EXTENSIONS:
+            name = 'example' + extension
+            with self.subTest(extension=extension):
+                self.assertNotEqual(formats.accepts(name, 'photo'),
+                                    formats.accepts(name, 'video'),
+                                    '%s belongs to both tabs or neither' % extension)
 
 
 if __name__ == '__main__':

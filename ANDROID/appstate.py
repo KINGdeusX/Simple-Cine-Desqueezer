@@ -15,11 +15,19 @@ FILENAME = 'state.json'
 DEFAULTS = {
     # The picked files are not remembered -- SAF grants for individual
     # documents are per-run, and choosing files each time is the flow.
-    'dest_key': '',
-    'dest_folder_name': 'desqueezed',
-    'preset_index': 0,
+    # Photos and video keep their own output folder, subfolder and preset.
+    'media': 'photo',
+    'dest_key_photo': '',
+    'dest_key_video': '',
+    'subfolder_photo': 'desqueezed',
+    'subfolder_video': 'desqueezed',
+    'preset_index_photo': 0,
+    'preset_index_video': 0,
     'custom_x': '1.33',
     'custom_y': '1.0',
+    'transcode': False,
+    'bitrate_mbps': '20',
+    'bitrate_mode': 'VBR',
 }
 
 
@@ -39,10 +47,11 @@ class AppState(dict):
                 if key in stored:
                     self[key] = stored[key]
         # a corrupt index must never crash the spinner
-        try:
-            self['preset_index'] = int(self['preset_index'])
-        except (TypeError, ValueError):
-            self['preset_index'] = 0
+        for key in ('preset_index_photo', 'preset_index_video'):
+            try:
+                self[key] = int(self[key])
+            except (TypeError, ValueError):
+                self[key] = 0
         return self
 
     def save(self):

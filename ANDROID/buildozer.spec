@@ -7,13 +7,14 @@ package.domain = com.kingdeusx
 source.dir = .
 source.include_exts = py,kv,png,jpg,ttf,json
 # Development-only trees must not be shipped inside the APK.
-source.exclude_dirs = tests, tools, logs, bin, .buildozer, __pycache__
+source.exclude_dirs = tests, tools, logs, bin, java, .buildozer, __pycache__
 source.exclude_patterns = *.apk, *.aab, *.log, buildozer.spec, README.md
 
-version = 1.1
+version = 1.2
 
-# The raw tag writer is pure Python; pillow is what physically resizes the
-# rendered formats (PNG/JPEG/TIFF).  pyjnius drives the Storage Access Framework.
+# The raw and MP4 tag writers are pure Python; pillow physically resizes the
+# rendered formats (PNG/JPEG/TIFF).  pyjnius drives the Storage Access Framework
+# and the Java transcoder.
 requirements = python3,kivy,pyjnius,pillow
 
 orientation = portrait, landscape
@@ -36,6 +37,10 @@ android.api = 36
 android.minapi = 29
 android.ndk_api = 29
 android.archs = arm64-v8a
+
+# The HEVC transcoder: MediaCodec, EGL and MediaMuxer are driven from Java,
+# because doing it from Python would mean thousands of JNI calls per frame.
+android.add_src = java
 
 android.accept_sdk_license = True
 android.allow_backup = True

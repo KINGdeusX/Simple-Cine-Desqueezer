@@ -66,6 +66,24 @@
             width: 1
             rectangle: self.x, self.y, self.width, self.height
 
+<TabButton@ToggleButton>:
+    group: 'media'
+    allow_no_selection: False
+    background_normal: ''
+    background_down: ''
+    background_color: (0.118, 0.118, 0.118, 1) if self.state == 'normal' else (0.16, 0.13, 0.05, 1)
+    color: (0.53, 0.53, 0.53, 1) if self.state == 'normal' else (0.941, 0.647, 0.0, 1)
+    font_size: sp(13)
+    font_name: 'desqueeze-mono'
+    bold: self.state == 'down'
+    canvas.after:
+        # a gold underline marks the live tab
+        Color:
+            rgba: (0.941, 0.647, 0.0, 1) if self.state == 'down' else (0.18, 0.18, 0.18, 1)
+        Rectangle:
+            pos: self.x, self.y
+            size: self.width, dp(2) if self.state == 'down' else dp(1)
+
 <RunButton@Button>:
     background_normal: ''
     background_down: ''
@@ -106,7 +124,7 @@
 <NameInput@NumberInput>:
     input_filter: None
 
-<PresetOption@SpinnerOption>:
+<OptionRow@SpinnerOption>:
     background_normal: ''
     background_down: ''
     background_color: (0.118, 0.118, 0.118, 1) if self.state == 'normal' else (0.941, 0.647, 0.0, 1)
@@ -119,8 +137,8 @@
     size_hint_y: None
     height: dp(46)
 
-<PresetSpinner@Spinner>:
-    option_cls: 'PresetOption'
+<DarkSpinner@Spinner>:
+    option_cls: 'OptionRow'
     background_normal: ''
     background_down: ''
     background_color: 0.118, 0.118, 0.118, 1
@@ -162,6 +180,26 @@
             pos: self.pos
             size: self.width * (max(0, min(100, self.value)) / 100.0), self.height
 
+<GoldCheckbox@Button>:
+    # a checkbox that matches the rest of the palette
+    active: False
+    size_hint_x: None
+    width: dp(26)
+    background_normal: ''
+    background_down: ''
+    background_color: 0, 0, 0, 0
+    canvas.after:
+        Color:
+            rgba: (0.941, 0.647, 0.0, 1) if self.active else (0.3, 0.3, 0.3, 1)
+        Line:
+            width: 1.2
+            rectangle: self.center_x - dp(9), self.center_y - dp(9), dp(18), dp(18)
+        Color:
+            rgba: (0.941, 0.647, 0.0, 1) if self.active else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.center_x - dp(5), self.center_y - dp(5)
+            size: dp(10), dp(10)
+
 <LogLine@Label>:
     size_hint_y: None
     height: dp(15)
@@ -173,6 +211,66 @@
     font_name: 'desqueeze-mono'
     color: 0.53, 0.53, 0.53, 1
     text_size: self.width - dp(12), self.height
+
+
+# --- the per-file progress table -------------------------------------------
+
+<QueueRow>:
+    orientation: 'vertical'
+    size_hint_y: None
+    height: dp(34)
+    padding: [dp(8), dp(3), dp(8), dp(3)]
+    spacing: dp(3)
+
+    BoxLayout:
+        size_hint_y: None
+        height: dp(15)
+        spacing: dp(6)
+        Label:
+            text: root.name
+            halign: 'left'
+            valign: 'middle'
+            shorten: True
+            shorten_from: 'left'
+            font_size: sp(11)
+            font_name: 'desqueeze-mono'
+            color:
+                (0.941, 0.647, 0.0, 1) if root.status == 'working' else \
+                ((0.753, 0.251, 0.251, 1) if root.status == 'failed' else \
+                ((0.4, 0.4, 0.4, 1) if root.status == 'skipped' else (0.78, 0.78, 0.78, 1)))
+            text_size: self.width, self.height
+        Label:
+            text: root.detail
+            size_hint_x: None
+            width: dp(150)
+            halign: 'right'
+            valign: 'middle'
+            shorten: True
+            shorten_from: 'right'
+            font_size: sp(10)
+            font_name: 'desqueeze-mono'
+            color:
+                (0.753, 0.251, 0.251, 1) if root.status == 'failed' else (0.45, 0.45, 0.45, 1)
+            text_size: self.width, self.height
+
+    # per-file progress: gold while working, dim green-grey once done
+    Widget:
+        size_hint_y: None
+        height: dp(4)
+        canvas:
+            Color:
+                rgba: 0.1, 0.1, 0.1, 1
+            Rectangle:
+                pos: self.pos
+                size: self.size
+            Color:
+                rgba:
+                    (0.753, 0.251, 0.251, 1) if root.status == 'failed' else \
+                    ((0.941, 0.647, 0.0, 1) if root.status == 'working' else \
+                    ((0.35, 0.42, 0.3, 1) if root.status == 'done' else (0.16, 0.16, 0.16, 1)))
+            Rectangle:
+                pos: self.pos
+                size: self.width * (max(0, min(100, root.percent)) / 100.0), self.height
 
 
 # --- the screen -------------------------------------------------------------
@@ -197,10 +295,10 @@
         size_hint_y: None
         pos_hint: {'top': 1}
         # Take exactly the height the controls need, so RUN is never half cut
-        # off, but never more than the screen minus a usable strip for the log.
+        # off, but never more than the screen minus a usable strip for the table.
         height:
             min(controls.minimum_height, root.height - root.padding[1] \
-            - root.padding[3] - (0 if app.wide else dp(150)))
+            - root.padding[3] - (0 if app.wide else dp(190)))
         do_scroll_x: False
         bar_width: dp(3)
         bar_color: 0.2, 0.2, 0.2, 1
@@ -226,7 +324,7 @@
                 text_size: self.width, self.height
 
             Label:
-                text: 'Anamorphic Desqueezer  -  RAW / TIFF / PNG / JPEG'
+                text: 'Anamorphic Desqueezer'
                 size_hint_y: None
                 height: dp(16)
                 halign: 'left'
@@ -236,7 +334,21 @@
                 color: 0.4, 0.4, 0.4, 1
                 text_size: self.width, self.height
 
-            Divider:
+            # ---- tabs
+            BoxLayout:
+                size_hint_y: None
+                height: dp(42)
+                spacing: dp(2)
+                TabButton:
+                    text: 'PHOTOS'
+                    state: 'down' if app.media == 'photo' else 'normal'
+                    disabled: app.is_running
+                    on_release: app.select_media('photo')
+                TabButton:
+                    text: 'VIDEO'
+                    state: 'down' if app.media == 'video' else 'normal'
+                    disabled: app.is_running
+                    on_release: app.select_media('video')
 
             SectionLabel:
                 text: 'ENGINE'
@@ -247,7 +359,9 @@
                     color: (0.941, 0.647, 0.0, 1) if app.engine_ready else (0.753, 0.251, 0.251, 1)
 
             SectionLabel:
-                text: 'IMAGES  (RAW / TIFF / PNG / JPEG)'
+                text:
+                    'VIDEO FILES  (MP4 / MOV)' if app.media == 'video' \
+                    else 'IMAGES  (RAW / TIFF / PNG / JPEG)'
             Field:
                 spacing: dp(6)
                 padding: [0, 0, 0, 0]
@@ -292,7 +406,7 @@
 
             SectionLabel:
                 text: 'SQUEEZE RATIO  -  Lens Preset'
-            PresetSpinner:
+            DarkSpinner:
                 id: preset
                 size_hint_y: None
                 height: dp(42)
@@ -323,9 +437,9 @@
                     text: app.custom_x
                     on_text: app.custom_x = self.text
                 Label:
-                    text: 'Y (usually 1.0):'
+                    text: 'Y:'
                     size_hint_x: None
-                    width: dp(118)
+                    width: dp(24)
                     halign: 'right'
                     valign: 'middle'
                     font_size: sp(11)
@@ -338,6 +452,83 @@
                     text: app.custom_y
                     on_text: app.custom_y = self.text
                 Widget:
+
+            # ---- video-only encoder settings
+            SectionLabel:
+                text: 'OUTPUT METHOD' if app.media == 'video' else ''
+                height: dp(16) if app.media == 'video' else 0
+                opacity: 1 if app.media == 'video' else 0
+
+            BoxLayout:
+                size_hint_y: None
+                height: dp(34) if app.media == 'video' else 0
+                opacity: 1 if app.media == 'video' else 0
+                disabled: app.media != 'video' or app.is_running or not app.transcode_available
+                spacing: dp(4)
+                GoldCheckbox:
+                    active: app.transcode
+                    on_release: app.transcode = not app.transcode
+                Label:
+                    text:
+                        'Re-encode to HEVC (real pixels)' if app.transcode_available \
+                        else 'Re-encode unavailable on this device'
+                    halign: 'left'
+                    valign: 'middle'
+                    font_size: sp(11)
+                    font_name: 'desqueeze-mono'
+                    color: (0.78, 0.78, 0.78, 1) if app.transcode else (0.45, 0.45, 0.45, 1)
+                    text_size: self.width, self.height
+
+            Label:
+                text:
+                    'Off: writes the pasp atom - instant and lossless, read by editors.' \
+                    if not app.transcode else \
+                    'On: re-encodes the pixels - slower and lossy, plays anywhere.'
+                size_hint_y: None
+                height: dp(28) if app.media == 'video' else 0
+                opacity: 1 if app.media == 'video' else 0
+                halign: 'left'
+                valign: 'top'
+                font_size: sp(10)
+                font_name: 'desqueeze-mono'
+                color: 0.4, 0.4, 0.4, 1
+                text_size: self.width, self.height
+
+            BoxLayout:
+                size_hint_y: None
+                height: dp(38) if (app.media == 'video' and app.transcode) else 0
+                opacity: 1 if (app.media == 'video' and app.transcode) else 0
+                disabled: not (app.media == 'video' and app.transcode) or app.is_running
+                spacing: dp(8)
+                Label:
+                    text: 'Bitrate:'
+                    size_hint_x: None
+                    width: dp(64)
+                    halign: 'left'
+                    valign: 'middle'
+                    font_size: sp(11)
+                    font_name: 'desqueeze-mono'
+                    color: 0.53, 0.53, 0.53, 1
+                    text_size: self.width, self.height
+                NumberInput:
+                    size_hint_x: None
+                    width: dp(70)
+                    text: app.bitrate_mbps
+                    on_text: app.bitrate_mbps = self.text
+                Label:
+                    text: 'Mbps'
+                    size_hint_x: None
+                    width: dp(46)
+                    halign: 'left'
+                    valign: 'middle'
+                    font_size: sp(10)
+                    font_name: 'desqueeze-mono'
+                    color: 0.4, 0.4, 0.4, 1
+                    text_size: self.width, self.height
+                DarkSpinner:
+                    text: app.bitrate_mode
+                    values: app.bitrate_modes
+                    on_text: app.bitrate_mode = self.text
 
             Divider:
 
@@ -359,19 +550,67 @@
             GoldProgress:
                 value: app.progress_value
 
-    # ---- log column
+    # ---- queue table + collapsible log
     BoxLayout:
         orientation: 'vertical'
-        spacing: dp(6)
+        spacing: dp(4)
         size_hint_x: 0.45 if app.wide else 1
-        # takes whatever the controls do not need
         size_hint_y: 1
 
         SectionLabel:
-            text: 'LOG'
+            text: 'QUEUE  (%d)' % len(app.queue_rows)
+
+        RecycleView:
+            id: queue_view
+            viewclass: 'QueueRow'
+            data: app.queue_rows
+            scroll_type: ['bars', 'content']
+            bar_width: dp(4)
+            bar_color: 0.2, 0.2, 0.2, 1
+            bar_inactive_color: 0.13, 0.13, 0.13, 1
+            canvas.before:
+                Color:
+                    rgba: 0.051, 0.051, 0.051, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+                Color:
+                    rgba: 0.133, 0.133, 0.133, 1
+                Line:
+                    width: 1
+                    rectangle: self.x, self.y, self.width, self.height
+            RecycleBoxLayout:
+                orientation: 'vertical'
+                padding: [0, dp(4)]
+                default_size: None, dp(34)
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+
+        # ---- log: a one-line summary that expands on tap
+        Button:
+            size_hint_y: None
+            height: dp(26)
+            background_normal: ''
+            background_down: ''
+            background_color: 0.09, 0.09, 0.09, 1
+            on_release: app.toggle_log()
+            text: ('v  LOG' if app.log_open else '>  LOG') + '    ' + app.log_summary
+            halign: 'left'
+            valign: 'middle'
+            shorten: True
+            shorten_from: 'right'
+            font_size: sp(10)
+            font_name: 'desqueeze-mono'
+            color: 0.45, 0.45, 0.45, 1
+            text_size: self.width - dp(12), self.height
+
         RecycleView:
             id: log_view
             viewclass: 'LogLine'
+            size_hint_y: None
+            height: (root.height * 0.32) if app.log_open else 0
+            opacity: 1 if app.log_open else 0
             scroll_type: ['bars', 'content']
             bar_width: dp(4)
             bar_color: 0.2, 0.2, 0.2, 1

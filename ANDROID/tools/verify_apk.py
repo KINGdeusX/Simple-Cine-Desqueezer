@@ -32,8 +32,9 @@ import zipfile
 PAGE = 16 * 1024
 PT_LOAD = 1
 
-REQUIRED_PYTHON = ('main', 'dng_engine', 'image_engine', 'engine', 'storage',
-                   'saf', 'appstate', 'formats')
+REQUIRED_PYTHON = ('main', 'dng_engine', 'image_engine', 'mp4_engine',
+                   'video_engine', 'engine', 'storage', 'saf', 'appstate',
+                   'formats')
 REQUIRED_DATA = ('desqueeze.kv', 'DejaVuSansMono.ttf')
 FORBIDDEN = ('tests/', 'tools/', 'smoke_app', 'tiff_builder', 'test_parity')
 
@@ -205,6 +206,28 @@ def check_payload(archive):
 
 # --- 4. signature -----------------------------------------------------------
 
+JAVA_CLASSES = ('com/kingdeusx/desqueeze/Transcoder',
+                'com/kingdeusx/desqueeze/InputSurface',
+                'com/kingdeusx/desqueeze/OutputSurface',
+                'com/kingdeusx/desqueeze/TextureRender')
+
+
+def check_java(archive):
+    """The transcoder is Java, so it lives in classes.dex rather than the bundle.
+
+    Without this the APK looks perfectly fine right up until someone turns the
+    re-encode toggle on and pyjnius cannot find the class.
+    """
+    dex = b''
+    for name in archive.namelist():
+        if name.startswith('classes') and name.endswith('.dex'):
+            dex += archive.read(name)
+    check(bool(dex), 'classes.dex present')
+    for class_name in JAVA_CLASSES:
+        check(class_name.encode() in dex,
+              'compiled into the APK: %s' % class_name.rsplit('/', 1)[-1])
+
+
 def check_signature(path, archive):
     apksigner = _sdk_tool('apksigner')
     if apksigner:
@@ -231,6 +254,7 @@ def main():
         check_manifest(path)
         check_native_libs(archive)
         check_payload(archive)
+        check_java(archive)
         check_signature(path, archive)
 
     print()

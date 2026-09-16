@@ -1,9 +1,9 @@
 """
-Desqueeze -- Anamorphic DNG Processor (Android port of Simple Cine Desqueezer).
+Desqueeze -- Anamorphic Desqueezer (Android port of Simple Cine Desqueezer).
 
 Startup rules this file follows on purpose (see Instruction.md, Phase 6):
 
-* module-level imports are limited to Kivy itself -- the DNG engine, the SAF
+* module-level imports are limited to Kivy itself -- the engines, the SAF
   bridge and anything else heavy are imported inside the function that first
   needs them, so nothing delays the first frame;
 * every step that can fail (state file, fonts, JNI, folder access) is wrapped,
@@ -12,6 +12,9 @@ Startup rules this file follows on purpose (see Instruction.md, Phase 6):
 * the batch runs on a plain thread and *never* touches a widget -- events are
   queued and drained by a Clock tick on the main thread, which is the Kivy
   equivalent of the desktop app's QThread + pyqtSignal split.
+
+Photos and video are separate tabs, each remembering its own selection, output
+folder and settings, because the two jobs have little to say to each other.
 """
 
 from __future__ import annotations
@@ -45,12 +48,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 IS_ANDROID = platform == 'android'
 
 MAX_LOG_LINES = 600          # bounded so a huge batch cannot exhaust memory
-LOG_FLUSH_SECONDS = 0.15     # batch redraws instead of one per file
+DRAIN_SECONDS = 0.15         # batch redraws instead of one per event
 WIDE_BREAKPOINT_DP = 720     # side-by-side above this width
+
+PHOTO, VIDEO = 'photo', 'video'
 
 
 class Root(BoxLayout):
     """Defined in desqueeze.kv."""
+
+
+class QueueRow(BoxLayout):
+    """One line of the progress table; its look lives in desqueeze.kv."""
+
+    name = StringProperty('')
+    status = StringProperty('waiting')
+    detail = StringProperty('')
+    percent = NumericProperty(0)
 
 
 class _CrashGuard(ExceptionHandler):
@@ -75,6 +89,7 @@ class DesqueezeApp(App):
     kv_file = os.path.join(HERE, 'desqueeze.kv')
 
     # --- state surfaced to the .kv file
+    media = StringProperty(PHOTO)
     source_text = StringProperty('No files selected')
     dest_text = StringProperty('Choose where results are written')
     dest_folder_name = StringProperty('desqueezed')
@@ -91,16 +106,31 @@ class DesqueezeApp(App):
     inset_top = NumericProperty(0)      # status bar, in pixels
     inset_bottom = NumericProperty(0)   # navigation / gesture bar, in pixels
 
+    # queue table + log
+    queue_rows = ListProperty([])
+    log_open = BooleanProperty(False)
+    log_summary = StringProperty('')
+
+    # video-only settings
+    transcode = BooleanProperty(False)
+    transcode_available = BooleanProperty(False)
+    bitrate_mbps = StringProperty('20')
+    bitrate_mode = StringProperty('VBR')
+    bitrate_modes = ListProperty(['VBR', 'CBR', 'CQ'])
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._source = None
-        self._dest = None
+        self._sources = {PHOTO: None, VIDEO: None}
+        self._dests = {PHOTO: None, VIDEO: None}
+        self._subfolders = {PHOTO: 'desqueezed', VIDEO: 'desqueezed'}
+        self._presets_by_media = {PHOTO: 0, VIDEO: 0}
         self._events = deque()          # producer: worker thread, consumer: Clock
         self._log = []
         self._engine = None
         self._worker = None
         self._state = None
         self._presets = []
+        self._loading = False
 
     # --- startup ------------------------------------------------------------
 
@@ -121,7 +151,7 @@ class DesqueezeApp(App):
         ExceptionManager.add_handler(_CrashGuard())
 
         root = Root()
-        Clock.schedule_interval(self._drain_events, LOG_FLUSH_SECONDS)
+        Clock.schedule_interval(self._drain_events, DRAIN_SECONDS)
         return root
 
     def _register_font(self):
@@ -159,29 +189,14 @@ class DesqueezeApp(App):
         except Exception:
             self.log('!  could not restore previous session')
         self._announce_engine()
-
-    def _announce_engine(self):
-        try:
-            from engine import build_engine
-            self.engine_status = 'Desqueeze engine ready'
-            self.engine_ready = True
-            self.log('Desqueeze engine ready')
-            self.log(build_engine().name)
-        except Exception as exc:
-            self.engine_status = 'Engine failed to load'
-            self.engine_ready = False
-            self.log('!  engine unavailable: %s' % exc)
-        import formats
-        self.log(formats.describe_support())
-        if not IS_ANDROID:
-            self.log('(desktop preview - folder pickers use plain paths)')
+        self._refresh_tab()
 
     def _apply_system_bar_insets(self):
         """Keep the UI out from under the status and navigation bars.
 
         Android 15+ draws apps edge to edge whether they ask for it or not, and
         Kivy has no notion of window insets, so without this the header sits
-        under the clock and the log sits under the gesture bar.
+        under the clock and the table sits under the gesture bar.
 
         The heights come from the platform's dimension resources rather than
         from ``View.getRootWindowInsets()``: Kivy's main loop is not Android's
@@ -204,6 +219,31 @@ class DesqueezeApp(App):
         except Exception:
             pass    # cosmetic only -- never worth failing startup over
 
+    def _announce_engine(self):
+        import formats
+
+        try:
+            from engine import build_engine
+            self.engine_status = 'Desqueeze engine ready'
+            self.engine_ready = True
+            self.log('Desqueeze engine ready')
+            self.log(build_engine().name)
+        except Exception as exc:
+            self.engine_status = 'Engine failed to load'
+            self.engine_ready = False
+            self.log('!  engine unavailable: %s' % exc)
+
+        try:
+            import video_engine
+            self.transcode_available = video_engine.transcode_available()
+        except Exception:
+            self.transcode_available = False
+        if IS_ANDROID and not self.transcode_available:
+            self.log('i  no HEVC encoder on this device - tagging only')
+        self.log(formats.describe_support())
+        if not IS_ANDROID:
+            self.log('(desktop preview - pickers use plain paths, no re-encode)')
+
     # --- persistence --------------------------------------------------------
 
     def _state_dir(self):
@@ -217,26 +257,33 @@ class DesqueezeApp(App):
 
         self._state = AppState(self._state_dir()).load()
         state = self._state
+        self._loading = True
+        try:
+            for media in (PHOTO, VIDEO):
+                index = state.get('preset_index_%s' % media, 0)
+                if not isinstance(index, int) or not 0 <= index < len(self._presets):
+                    index = 0
+                self._presets_by_media[media] = index
+                self._subfolders[media] = (state.get('subfolder_%s' % media)
+                                           or 'desqueezed')
+                key = state.get('dest_key_%s' % media) or ''
+                if key:
+                    folder = self._reopen(key)
+                    if folder is not None:
+                        self._dests[media] = folder
+                    else:
+                        self.log('i  previous %s output folder is no longer '
+                                 'accessible' % media)
 
-        index = state['preset_index']
-        if not 0 <= index < len(self._presets):
-            index = 0
-        self.preset_label = self.preset_labels[index]
-        self.is_custom = index == self._custom_index
-        self.custom_x = str(state.get('custom_x') or '1.33')
-        self.custom_y = str(state.get('custom_y') or '1.0')
-        self.dest_folder_name = state.get('dest_folder_name')
-        if self.dest_folder_name is None:
-            self.dest_folder_name = 'desqueezed'
-
-        dest_key = state.get('dest_key') or ''
-        if dest_key:
-            folder = self._reopen(dest_key)
-            if folder is not None:
-                self._set_dest(folder, remember=False)
-            else:
-                self.log('i  previous output folder is no longer accessible')
-        self._refresh_dest_text()
+            self.custom_x = str(state.get('custom_x') or '1.33')
+            self.custom_y = str(state.get('custom_y') or '1.0')
+            self.bitrate_mbps = str(state.get('bitrate_mbps') or '20')
+            self.bitrate_mode = str(state.get('bitrate_mode') or 'VBR').upper()
+            self.transcode = bool(state.get('transcode', False))
+            self.media = state.get('media') if state.get('media') in (PHOTO, VIDEO) \
+                else PHOTO
+        finally:
+            self._loading = False
 
     def _reopen(self, key):
         """Rebuild a saved folder, checking the SAF grant still stands."""
@@ -253,17 +300,25 @@ class DesqueezeApp(App):
             return None
 
     def _save_state(self):
-        if self._state is None:
+        if self._state is None or self._loading:
             return
         try:
-            self._state.update({
-                # the file selection is per-run and deliberately not persisted
-                'dest_key': self._dest.key if self._dest else '',
-                'dest_folder_name': self.dest_folder_name,
-                'preset_index': self._preset_index(),
+            self._subfolders[self.media] = self.dest_folder_name
+            self._presets_by_media[self.media] = self._preset_index()
+            payload = {
+                'media': self.media,
                 'custom_x': self.custom_x,
                 'custom_y': self.custom_y,
-            })
+                'transcode': bool(self.transcode),
+                'bitrate_mbps': self.bitrate_mbps,
+                'bitrate_mode': self.bitrate_mode,
+            }
+            for media in (PHOTO, VIDEO):
+                dest = self._dests[media]
+                payload['dest_key_%s' % media] = dest.key if dest else ''
+                payload['subfolder_%s' % media] = self._subfolders[media]
+                payload['preset_index_%s' % media] = self._presets_by_media[media]
+            self._state.update(payload)
             self._state.save()
         except Exception:
             pass
@@ -280,6 +335,42 @@ class DesqueezeApp(App):
             self._engine.cancel()
         self._save_state()
 
+    # --- tabs ---------------------------------------------------------------
+
+    def select_media(self, media):
+        if media == self.media or self.is_running:
+            return
+        self._subfolders[self.media] = self.dest_folder_name
+        self._presets_by_media[self.media] = self._preset_index()
+        self.media = media
+        self._refresh_tab()
+        self._save_state()
+
+    def _refresh_tab(self):
+        """Point every visible control at the current tab's own state."""
+        self._loading = True
+        try:
+            index = self._presets_by_media.get(self.media, 0)
+            self.preset_label = self.preset_labels[index]
+            self.is_custom = index == self._custom_index
+            self.dest_folder_name = self._subfolders.get(self.media, 'desqueezed')
+        finally:
+            self._loading = False
+
+        selection = self._sources.get(self.media)
+        self.source_text = selection.label if selection else 'No files selected'
+        self._refresh_dest_text()
+        self.queue_rows = []
+        self.progress_value = 0
+
+    @property
+    def _source(self):
+        return self._sources.get(self.media)
+
+    @property
+    def _dest(self):
+        return self._dests.get(self.media)
+
     # --- layout -------------------------------------------------------------
 
     def _on_window_size(self, _window, size):
@@ -290,6 +381,9 @@ class DesqueezeApp(App):
             self.wide = width >= dp(WIDE_BREAKPOINT_DP)
         except Exception:
             self.wide = False
+
+    def toggle_log(self):
+        self.log_open = not self.log_open
 
     # --- presets ------------------------------------------------------------
 
@@ -302,6 +396,9 @@ class DesqueezeApp(App):
     def select_preset(self, label):
         self.preset_label = label
         self.is_custom = self._preset_index() == self._custom_index
+        if not self._loading:
+            self._presets_by_media[self.media] = self._preset_index()
+            self._save_state()
 
     def _current_scale(self):
         """Return ``(x, y)`` as strings, or ``None`` if the custom values are bad."""
@@ -317,6 +414,21 @@ class DesqueezeApp(App):
                 return None
         return scale_x, scale_y
 
+    def _video_settings(self):
+        import video_engine
+
+        try:
+            megabits = float((self.bitrate_mbps or '0').strip())
+        except ValueError:
+            megabits = 0
+        return {
+            'transcode': bool(self.transcode) and self.media == VIDEO,
+            'mode': (self.bitrate_mode or 'VBR').lower(),
+            'bitrate': int(max(0.0, megabits) * 1_000_000),
+            'quality': 80,
+            'keyframe_seconds': 1,
+        }
+
     # --- folder pickers -----------------------------------------------------
 
     def browse_source(self):
@@ -329,9 +441,13 @@ class DesqueezeApp(App):
         if IS_ANDROID:
             import saf
             try:
-                callback = lambda picked, warning: self._picked(which, picked, warning)
+                media = self.media
+
+                def callback(picked, warning):
+                    self._picked(which, media, picked, warning)
+
                 if which == 'source':
-                    saf.pick_files(callback)
+                    saf.pick_files(callback, media)
                 else:
                     saf.pick_folder(callback)
             except Exception as exc:
@@ -357,6 +473,7 @@ class DesqueezeApp(App):
         box.add_widget(button)
         popup = Popup(title='Select %s' % which, content=box,
                       size_hint=(0.9, None), height=dp(180))
+        media = self.media
 
         def choose(*_args):
             import glob
@@ -364,20 +481,20 @@ class DesqueezeApp(App):
             popup.dismiss()
             text = field.text.strip()
             if which == 'dest':
-                self._picked(which, storage.LocalFolder(text), None)
+                self._picked(which, media, storage.LocalFolder(text), None)
                 return
             paths = sorted(glob.glob(text)) if any(c in text for c in '*?[') \
                 else [text]
             if len(paths) == 1 and os.path.isdir(paths[0]):
                 paths = sorted(os.path.join(paths[0], entry)
                                for entry in os.listdir(paths[0]))
-            self._picked(which, storage.LocalFileSelection(paths), None)
+            self._picked(which, media, storage.LocalFileSelection(paths), None)
 
         button.bind(on_release=choose)
         popup.open()
 
     @mainthread
-    def _picked(self, which, picked, warning):
+    def _picked(self, which, media, picked, warning):
         """Called back from the Android UI thread -- hop to Kivy's main thread."""
         if warning:
             self.log('i  %s' % warning)
@@ -385,38 +502,49 @@ class DesqueezeApp(App):
             return
         try:
             if which == 'source':
-                self._set_source(picked)
+                self._set_source(media, picked)
             else:
-                self._set_dest(picked)
+                self._set_dest(media, picked)
         except Exception as exc:
             self.log('!  %s' % exc)
 
-    def _set_source(self, selection):
-        self._source = selection
-        self.source_text = selection.label
+    def _set_source(self, media, selection):
+        self._sources[media] = selection
         try:
-            supported = len(selection.list_images())
+            supported = len(selection.list_images(media))
         except Exception:
             supported = 0
+        if media == self.media:
+            self.source_text = selection.label
+            self.queue_rows = [{'name': name, 'status': 'waiting',
+                                'detail': '', 'percent': 0}
+                               for name, _handle in selection.list_images(media)]
         self.log('Selected: %s (%d supported)' % (selection.label, supported))
 
-    def _set_dest(self, folder, remember=True):
-        self._dest = folder
-        self._refresh_dest_text()
-        if remember:
-            self.log('Output : %s' % self.dest_text)
-            self._save_state()
+    def _set_dest(self, media, folder):
+        self._dests[media] = folder
+        # a tab with no destination of its own inherits this one
+        other = VIDEO if media == PHOTO else PHOTO
+        if self._dests.get(other) is None:
+            self._dests[other] = folder
+        if media == self.media:
+            self._refresh_dest_text()
+        self.log('Output : %s' % self.dest_text)
+        self._save_state()
 
     def _refresh_dest_text(self):
-        if self._dest is None:
+        dest = self._dest
+        if dest is None:
             self.dest_text = 'Choose where results are written'
             return
         name = (self.dest_folder_name or '').strip()
-        base = self._dest.label.rstrip('/')
+        base = dest.label.rstrip('/')
         self.dest_text = '%s/%s' % (base, name) if name else base
 
     def on_dest_folder_name(self, _instance, _value):
         self._refresh_dest_text()
+        if not self._loading:
+            self._subfolders[self.media] = self.dest_folder_name
 
     # --- run / cancel -------------------------------------------------------
 
@@ -424,7 +552,7 @@ class DesqueezeApp(App):
         if self.is_running:
             return
         if self._source is None:
-            self.log('!  Please select the images to process.')
+            self.log('!  Please select the files to process.')
             return
         if self._dest is None:
             self.log('!  Please choose an output folder.')
@@ -436,6 +564,12 @@ class DesqueezeApp(App):
             return
         scale_x, scale_y = scale
 
+        settings = self._video_settings()
+        if settings['transcode'] and not self.transcode_available:
+            self.log('!  This device cannot re-encode; turn the toggle off to '
+                     'tag instead.')
+            return
+
         try:
             if not self._source.exists():
                 self.log('!  The selected files are no longer available.')
@@ -446,7 +580,6 @@ class DesqueezeApp(App):
             return
 
         self._log = []
-        self._refresh_log()
         self.progress_value = 0
         self.is_running = True
         self.log('Files  : %s' % self._source.label)
@@ -457,33 +590,35 @@ class DesqueezeApp(App):
         self._engine = build_engine()
         self._worker = threading.Thread(
             target=self._run_worker,
-            args=(self._engine, self._source, dest, scale_x, scale_y),
+            args=(self._engine, self._source, dest, scale_x, scale_y,
+                  self.media, settings),
             daemon=True)
         self._worker.start()
 
     def _resolve_dest(self):
         """The output folder, creating the named subfolder inside it.
 
-        The subfolder matters: people naturally pick the folder their images
+        The subfolder matters: people naturally pick the folder their files
         came from, and writing there directly would overwrite the originals
         with their desqueezed versions.
         """
-        if not self._dest.exists():
+        dest = self._dest
+        if not dest.exists():
             raise RuntimeError('Output folder is no longer available.')
         name = (self.dest_folder_name or '').strip()
         if not name:
-            return self._dest
-        return self._dest.ensure_child_folder(name)
+            return dest
+        return dest.ensure_child_folder(name)
 
-    def _run_worker(self, engine, source, dest, scale_x, scale_y):
+    def _run_worker(self, engine, source, dest, scale_x, scale_y, media, settings):
         """Runs off the main thread; only ever appends to ``self._events``."""
         try:
-            for event in engine.process(source, dest, scale_x, scale_y):
-                self._events.append(event)
+            engine.process(source, dest, scale_x, scale_y, self._events.append,
+                           media=media, settings=settings)
         except Exception:
-            from engine import done
+            from engine import done, log as make_log
             for line in traceback.format_exc().strip().split('\n'):
-                self._events.append(_log_event(line))
+                self._events.append(make_log(line))
             self._events.append(done(False, 'Unexpected error - see log'))
 
     def cancel_run(self):
@@ -491,14 +626,15 @@ class DesqueezeApp(App):
             self._engine.cancel()
             self.log('Cancelling after the current file...')
 
-    # --- log ----------------------------------------------------------------
+    # --- events -------------------------------------------------------------
 
     def _drain_events(self, _dt):
         """Main-thread consumer for everything the worker produced."""
         if not self._events:
             return
-        dirty = False
+        log_dirty = rows_dirty = False
         finished = None
+
         while self._events:
             try:
                 event = self._events.popleft()
@@ -506,7 +642,19 @@ class DesqueezeApp(App):
                 break
             if event.kind == 'log':
                 self._append_line(event.message)
-                dirty = True
+                log_dirty = True
+            elif event.kind == 'rows':
+                self.queue_rows = [{'name': name, 'status': 'waiting',
+                                    'detail': '', 'percent': 0}
+                                   for name in event.value]
+            elif event.kind == 'item':
+                if 0 <= event.index < len(self.queue_rows):
+                    row = dict(self.queue_rows[event.index])
+                    row['status'] = event.value['status']
+                    row['percent'] = event.value['percent']
+                    row['detail'] = event.message
+                    self.queue_rows[event.index] = row
+                    rows_dirty = True
             elif event.kind == 'progress':
                 self.progress_value = event.value
             elif event.kind == 'done':
@@ -518,9 +666,13 @@ class DesqueezeApp(App):
                                           finished.message))
             self.progress_value = 100 if finished.ok else 0
             self.is_running = False
-            dirty = True
-        if dirty:
+            log_dirty = True
+        if rows_dirty:
+            self.property('queue_rows').dispatch(self)
+        if log_dirty:
             self._refresh_log()
+
+    # --- log ----------------------------------------------------------------
 
     def _append_line(self, text):
         self._log.append(text)
@@ -539,17 +691,13 @@ class DesqueezeApp(App):
         self._refresh_log()
 
     def _refresh_log(self):
+        self.log_summary = self._log[-1] if self._log else ''
         try:
             view = self.root.ids.log_view
         except Exception:
             return
         view.data = [{'text': line} for line in self._log]
         view.scroll_y = 0
-
-
-def _log_event(message):
-    from engine import log as make_log
-    return make_log(message)
 
 
 if __name__ == '__main__':

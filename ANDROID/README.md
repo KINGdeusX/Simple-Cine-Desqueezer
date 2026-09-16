@@ -4,17 +4,20 @@ The Android port of **Simple Cine Desqueezer** — same gold-on-black look and t
 same lens presets, built with Kivy and packaged with Buildozer. You pick the
 images to desqueeze, it writes the results into a folder you choose once.
 
-It handles more than the desktop app does:
+It handles more than the desktop app does, and there are **separate Photos and
+Video tabs** — each with its own selection, output folder and preset.
 
 | Format | What happens |
 |---|---|
 | **DNG**, **Sony ARW/SR2/SRF**, **Nikon NEF/NRW** | the `DefaultScale` tag is written, exactly as ExifTool would — pixels untouched, so the file stays raw |
 | **PNG**, **JPEG**, **TIFF** | the pixels are physically stretched, so the image really is desqueezed in any viewer |
+| **MP4**, **MOV** | the `pasp` pixel-aspect atom is written — instant and lossless; or, with the toggle on, the clip is re-encoded to HEVC at the stretched size |
 
-Raw files *cannot* be resized without destroying what makes them raw, and
-nothing reads `DefaultScale` from a JPEG or PNG — so each format gets the only
-treatment that actually works for it. `formats.py` is the single place that
-decides which path a file takes.
+Raw files *cannot* be resized without destroying what makes them raw, nothing
+reads `DefaultScale` from a JPEG, and a two-hour clip cannot be re-encoded in
+the time it takes to write four bytes — so each format gets the only treatment
+that actually works for it. `formats.py` is the single place that decides which
+path a file takes.
 
 The desktop app is untouched: it still lives in the repository root (`app.py`),
 and everything Android lives in this folder.
@@ -27,6 +30,9 @@ ANDROID/
   engine.py          DesqueezeEngine interface + lens presets + dispatch
   dng_engine.py      the pure-Python raw tag writer
   image_engine.py    the PNG/JPEG/TIFF pixel resizer
+  mp4_engine.py      the pure-Python MP4/MOV pasp writer
+  video_engine.py    video routing; drives the Java transcoder
+  java/              MediaCodec + EGL HEVC transcoder (compiled into the APK)
   storage.py         folder access (SAF on Android, filesystem on desktop)
   saf.py             ACTION_OPEN_DOCUMENT_TREE picker + persistable grants
   appstate.py        state.json in the app's private storage
@@ -50,19 +56,25 @@ every phone from roughly 2019 onward, including the Nubia Neo 5 GT 5G.
 
 ## Use it
 
-1. **Images** → *Select*. The system file picker opens; tap and hold to select
-   as many files as you like. Mixed formats in one batch are fine.
-2. **Output folder** → *Browse*, once. It is remembered between runs, so from
+1. Choose the **PHOTOS** or **VIDEO** tab. They are independent: each remembers
+   its own files, output folder and lens preset.
+2. **Select**. The system file picker opens, filtered to that tab's formats; tap
+   and hold to select as many files as you like. Mixed formats are fine.
+3. **Output folder** → *Browse*, once. It is remembered between runs, so from
    then on you only pick files. Results land in the **Subfolder** named below it
    (default `desqueezed`) — that subfolder is what stops a run from overwriting
-   your originals when you point the output at the folder the images came from.
-3. Pick a **lens preset**, or `Custom...` and type your own X / Y.
-4. **RUN DESQUEEZE**. Progress, a per-file log and **CANCEL** work as they do on
-   the desktop; cancelling lets the current file finish and stops after it.
+   your originals when you point the output at the folder the files came from.
+4. Pick a **lens preset**, or `Custom...` and type your own X / Y.
+5. On the video tab, optionally turn on **Re-encode to HEVC** and set the
+   bitrate and mode — see below.
+6. **RUN DESQUEEZE**. The queue table shows every file with its own progress
+   bar; the overall bar sits under the button. **CANCEL** stops after the
+   current file. The log is collapsed into a one-line strip — tap it to expand.
 
 Originals are never modified — every file is written out fresh, exactly like the
 desktop version. Anything selected that is not a supported format is skipped and
-reported in the log rather than failing the batch.
+reported rather than failing the batch, and a file that fails partway leaves no
+stub behind in the output folder.
 
 ## Which engine this uses
 
@@ -96,6 +108,56 @@ To verify a processed file against the desktop app:
 ```bash
 exiftool -a -G1 -s -DefaultScale phone_output/A001_0001.dng
 ```
+
+## Video: two ways to desqueeze
+
+**Metadata (default, toggle off).** `mp4_engine.py` writes the `pasp` atom into
+the video track's sample entry and sets the `tkhd` display size to match. Both
+are needed because players disagree about which to read; writing the pair is
+exactly what `ffmpeg -aspect` does and is spec-conformant rather than a double
+stretch. The picture data is copied through untouched, so this is **genuinely
+lossless** — verified by comparing per-frame MD5s before and after — and takes
+about as long as copying the file.
+
+It is not free of caveats: editors (Resolve, Premiere, FCP) honour `pasp`, but
+the phone's own gallery and many consumer players ignore it and will still show
+the clip squeezed.
+
+**Re-encode (toggle on).** The phone's hardware HEVC encoder rewrites the video
+at the stretched size, so it plays correctly anywhere. The pipeline never brings
+a frame into application memory: the decoder writes into a `SurfaceTexture`, the
+GPU draws that onto the encoder's input surface at the new size, and the encoder
+hands samples straight to the muxer. Audio is copied across untouched and
+interleaved with the video. Rotation is preserved.
+
+This path deliberately does **not** also write `pasp` — the pixels are already
+the right shape, and a player honouring both would stretch twice.
+
+* **Bitrate** is a single target in Mbps plus a **mode**. Android's `MediaFormat`
+  exposes `KEY_BIT_RATE`, `KEY_BITRATE_MODE` and `KEY_QUALITY` — there is no
+  `KEY_MAX_BIT_RATE`, so separate min/max ceilings are not something a hardware
+  encoder can be asked for. `CQ` uses a quality value instead of a bitrate.
+* **Nothing is scaled to a fixed resolution.** The output is the source size with
+  the squeeze applied — 1920×1080 at 1.33× becomes 2554×1080 — and the source
+  frame rate is kept.
+* **Device capabilities are queried, never assumed.** Before configuring, the
+  encoder is asked for its width/height alignment, supported size ranges,
+  bitrate range and which bitrate modes it implements, and the request is fitted
+  to them. MediaTek encoders in particular insist on aligned dimensions and fail
+  or produce garbage otherwise; this is what makes the app work on more than the
+  one phone it was written on.
+* **If the encoder cannot manage the size**, the output is scaled down
+  *proportionally* rather than clamped per axis — clamping each axis separately
+  squares the picture, which is how a 2554×1080 desqueeze first came out of the
+  emulator as 512×512. When that happens the log says so explicitly
+  (`2554x1080 capped to ...`) instead of quietly handing back a different shape.
+* **Audio and video are read from one `MediaExtractor`**, with samples
+  dispatched by track index and the first few audio samples queued until the
+  muxer is ready. A second extractor over the same file returns a valid track
+  format and then no samples at all, which produced output with a silent,
+  zero-length audio track — so the two-extractor arrangement is deliberately
+  avoided.
+* If the device has no HEVC encoder the toggle is disabled and says so.
 
 ## Storage and permissions
 
@@ -172,8 +234,22 @@ originals, which were sitting in the very folder chosen as the output, were
 untouched — the subfolder did its job. Screenshots of each step are in
 `logs/shots/`.
 
+It was also driven through the **video** tab on the device, both ways:
+
+* **Metadata**: two real H.264 clips (MP4 and MOV) were tagged through SAF. The
+  results were pulled back and read with ffprobe — `SAR 133:100`, `DAR 532:225`
+  — decoded without error, and every one of the 90 and 48 video frames came back
+  **bit-identical** to the source. Audio was untouched.
+* **Re-encode**: the same clips went through the hardware pipeline to HEVC. The
+  output decoded cleanly, kept its frame rate (30 and 24 fps), kept the
+  desqueezed aspect ratio, and carried its **AAC audio** across intact at the
+  original sample rate and matching duration.
+
 The emulator runs an x86_64 build of the same sources (from the `emulator`
-buildozer profile), because the shipped APK is arm64-only.
+buildozer profile), because the shipped APK is arm64-only. Note that its HEVC
+encoder is a *software* one limited to 512 px, so the re-encode there comes out
+512×216 — correctly proportioned, just small. A real device (the Nubia's
+MediaTek encoder included) reports far larger limits and is not capped.
 
 ## API level: built against 36, ready for 37
 
@@ -210,7 +286,13 @@ the Android 16/17 requirements that usually break older builds:
 |---|---|
 | ExifTool byte parity for rationals and tag placement | `tests/test_parity.py` |
 | Resize geometry, EXIF orientation, odd colour modes | `tests/test_images.py` |
-| Format routing (raw vs pixel vs unsupported) | `tests/test_images.py` |
+| Format routing (raw vs pixel vs video vs unsupported) | `tests/test_images.py` |
+| MP4 chunk offsets still address the right bytes after a rewrite | `tests/test_video.py` |
+| Real H.264 files stay decodable, frame-for-frame identical | `tests/test_video.py` (ffmpeg) |
+| pasp/DAR read back correctly by ffprobe, every preset | `tests/test_video.py` (ffmpeg) |
+| Rotated clips stretch the displayed width, not the height | `tests/test_video.py` |
+| Video larger than RAM is never read whole | `tests/test_video.py` |
+| Every accepted extension maps to a MIME that keeps its name | `tests/test_images.py` |
 | Corrupt / non-DNG files are skipped, not fatal | `tests/test_parity.py`, smoke test |
 | App boots, processes a real batch, writes correct tags | `tests/smoke_app.py` |
 | Originals untouched, output folder auto-created | `tests/smoke_app.py` |
@@ -231,6 +313,12 @@ the Android 16/17 requirements that usually break older builds:
   `#141414`) covers that gap instead of a white flash. This is inherent to the
   fully-Python approach, not a bug.
 * **The engine is not literal ExifTool** — see above. Values are identical.
+* **Fragmented MP4 is refused** when a `pasp` atom would have to be *added*.
+  Those files carry absolute offsets inside `tfhd` that shifting `moov` would
+  invalidate, and quietly corrupting footage is worse than declining; re-encode
+  such a clip instead. Replacing an existing `pasp` needs no size change and
+  works fine.
+* **Only the first frame** of a multi-page TIFF or animated PNG is kept.
 * **PNG/JPEG/TIFF are re-encoded**, because their pixels are resized. JPEG is
   saved at quality 95 with the original subsampling, EXIF and ICC profile
   preserved, but a re-encode is still a lossy generation. Only the first frame

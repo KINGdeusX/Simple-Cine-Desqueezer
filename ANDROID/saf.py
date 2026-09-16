@@ -25,6 +25,7 @@ REQUEST_DEST = 0xDE02
 
 _bound = False
 _pending = {}
+_media = None
 
 
 class SafUnavailable(Exception):
@@ -106,10 +107,11 @@ def _deliver_files(intent, callback):
     selection = SafFileSelection(items)
 
     import formats
-    unsupported = [name for _uri, name in items if not formats.is_supported(name)]
+    unsupported = [name for _uri, name in items
+                   if not formats.accepts(name or '', _media)]
     warning = None
     if unsupported:
-        warning = '%d selected file(s) are not a supported format and will be ' \
+        warning = '%d selected file(s) are not supported here and will be ' \
                   'skipped' % len(unsupported)
     callback(selection, warning)
 
@@ -147,14 +149,18 @@ def _start(intent, request_code, callback):
     mActivity.startActivityForResult(intent, request_code)
 
 
-def pick_files(callback):
+def pick_files(callback, media=None):
     """Open the system file picker with multi-select enabled.
 
-    ``callback(selection_or_None, warning_or_None)`` runs on the Android UI
-    callback thread; the caller is expected to hop back to Kivy's main thread.
+    ``media`` narrows the picker to images or video.  ``callback(selection or
+    None, warning or None)`` runs on the Android UI callback thread; the caller
+    is expected to hop back to Kivy's main thread.
     """
     autoclass, _activity, _mActivity = _android()
     import formats
+
+    global _media
+    _media = media
 
     Intent = autoclass('android.content.Intent')
     intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
@@ -162,7 +168,7 @@ def pick_files(callback):
     intent.setType('*/*')
     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, True)
     try:
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, formats.PICKER_MIME_TYPES)
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, formats.mime_types_for(media))
     except Exception:
         pass    # an unfiltered picker is better than no picker
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

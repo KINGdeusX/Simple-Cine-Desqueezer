@@ -16,7 +16,10 @@ import os
 
 import formats
 
-DEFAULT_MIME = 'image/x-adobe-dng'
+# Anything we cannot name precisely is created as a generic binary.  This must
+# never be a real format: SAF providers append the extension implied by the MIME
+# type they are handed, so a wrong guess turns "clip.mp4" into "clip.mp4.dng".
+DEFAULT_MIME = 'application/octet-stream'
 DIR_MIME = 'vnd.android.document/directory'
 
 MIME_BY_EXTENSION = {
@@ -31,6 +34,9 @@ MIME_BY_EXTENSION = {
     '.jpeg': 'image/jpeg',
     '.tif': 'image/tiff',
     '.tiff': 'image/tiff',
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/mp4',
+    '.mov': 'video/quicktime',
 }
 
 
@@ -69,17 +75,29 @@ class LocalFolder:
         return os.path.isdir(self.path)
 
     # -- reading
-    def list_images(self):
+    def list_images(self, media=None):
         try:
             names = os.listdir(self.path)
         except OSError as exc:
             raise StorageError(str(exc))
         return sorted((name, os.path.join(self.path, name))
-                      for name in names if formats.is_supported(name))
+                      for name in names if _wanted(name, media))
 
     def read(self, handle):
         with open(handle, 'rb') as stream:
             return stream.read()
+
+    def open_read(self, handle):
+        try:
+            return open(handle, 'rb')
+        except OSError as exc:
+            raise StorageError(str(exc))
+
+    def size_of(self, handle):
+        try:
+            return os.path.getsize(handle)
+        except OSError:
+            return None
 
     # -- writing
     def ensure_child_folder(self, name):
@@ -90,15 +108,38 @@ class LocalFolder:
             raise StorageError(str(exc))
         return LocalFolder(path)
 
-    def write(self, name, data):
+    def open_write(self, name):
+        """Return ``(stream, written_name)``; the caller closes the stream."""
         path = os.path.join(self.path, name)
         try:
             os.makedirs(self.path, exist_ok=True)
-            with open(path, 'wb') as stream:
-                stream.write(data)
+            return open(path, 'wb'), name
         except OSError as exc:
             raise StorageError(str(exc))
-        return name
+
+    def write(self, name, data):
+        stream, written = self.open_write(name)
+        try:
+            stream.write(data)
+        finally:
+            stream.close()
+        return written
+
+    def delete(self, name):
+        """Remove a file we created but could not finish writing."""
+        try:
+            os.remove(os.path.join(self.path, name))
+            return True
+        except OSError:
+            return False
+
+    def path_for_write(self, name):
+        """A real filesystem path, for APIs that cannot take a stream."""
+        try:
+            os.makedirs(self.path, exist_ok=True)
+        except OSError as exc:
+            raise StorageError(str(exc))
+        return os.path.join(self.path, name)
 
 
 # --- Android SAF backend ----------------------------------------------------
@@ -166,6 +207,102 @@ def _read_uri_via_stream(uri):
         return b''.join(chunks)
     finally:
         stream.close()
+
+
+def open_uri_read(uri):
+    """A seekable Python file object over a content:// document.
+
+    Video files run to gigabytes, so they are never loaded whole; everything
+    that touches one works through a stream.  A detached POSIX fd gives a real
+    Python file object, which is both faster than marshalling byte[] across JNI
+    and seekable -- and the MP4 writer needs to seek.
+    """
+    try:
+        descriptor = _resolver().openFileDescriptor(uri, 'r')
+        if descriptor is not None:
+            return os.fdopen(descriptor.detachFd(), 'rb')
+    except Exception as exc:
+        raise StorageError('cannot open file for reading (%s)' % exc)
+    raise StorageError('cannot open file for reading')
+
+
+def _open_uri_write(uri, name):
+    try:
+        descriptor = _resolver().openFileDescriptor(uri, 'wt')
+        if descriptor is not None:
+            return os.fdopen(descriptor.detachFd(), 'wb')
+    except Exception:
+        pass        # a few providers only offer streams
+    stream = _resolver().openOutputStream(uri, 'wt')
+    if stream is None:
+        raise StorageError('cannot open "%s" for writing' % name)
+    return _JavaOutputStream(stream)
+
+
+def size_of_uri(uri):
+    try:
+        descriptor = _resolver().openFileDescriptor(uri, 'r')
+        if descriptor is None:
+            return None
+        try:
+            return int(descriptor.getStatSize())
+        finally:
+            descriptor.close()
+    except Exception:
+        return None
+
+
+class _JavaOutputStream:
+    """Minimal file-like wrapper over a java.io.OutputStream."""
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, data):
+        self._stream.write(bytes(data) if not isinstance(data, bytes) else data)
+        return len(data)
+
+    def flush(self):
+        self._stream.flush()
+
+    def close(self):
+        try:
+            self._stream.flush()
+        finally:
+            self._stream.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+
+def _wanted(name, media):
+    """Extension filter shared by every listing."""
+    if media in ('photo', 'video'):
+        return formats.accepts(name, media)
+    return formats.is_supported(name)
+
+
+def copy_stream(source, destination, total=None, on_progress=None,
+                should_cancel=None, chunk=1024 * 1024):
+    """Copy one stream into another, reporting progress as it goes.
+
+    Returns the number of bytes copied, or ``None`` if cancelled partway.
+    """
+    copied = 0
+    while True:
+        if should_cancel is not None and should_cancel():
+            return None
+        block = source.read(chunk)
+        if not block:
+            break
+        destination.write(block)
+        copied += len(block)
+        if on_progress is not None and total:
+            on_progress(min(99, int(copied * 100 / total)))
+    return copied
 
 
 class SafFolder:
@@ -247,14 +384,20 @@ class SafFolder:
         finally:
             cursor.close()
 
-    def list_images(self):
+    def list_images(self, media=None):
         found = [(name, doc_id) for name, doc_id, mime in self._children()
-                 if mime != DIR_MIME and formats.is_supported(name or '')]
+                 if mime != DIR_MIME and _wanted(name or '', media)]
         found.sort()
         return found
 
     def read(self, handle):
         return read_uri(self._document_uri(handle))
+
+    def open_read(self, handle):
+        return open_uri_read(self._document_uri(handle))
+
+    def size_of(self, handle):
+        return size_of_uri(self._document_uri(handle))
 
     # -- writing
     def _child_index(self, refresh=False):
@@ -287,40 +430,68 @@ class SafFolder:
         self._child_index()[name] = (child_id, DIR_MIME)
         return SafFolder(self.tree_uri_string, child_id)
 
-    def write(self, name, data):
+    def _target_uri(self, name):
+        """The document to write ``name`` into, creating it if necessary.
+
+        Returns ``(uri, written_name)``.  The name can differ from the one asked
+        for: if the provider refuses to overwrite it appends " (1)" and similar,
+        and the caller should report whatever actually got written.
+        """
         document_id, mime = self._find_child(name)
         if document_id is not None and mime != DIR_MIME:
-            uri = self._document_uri(document_id)      # overwrite in place
-            written_name = name
-        else:
-            uri = self._contract.createDocument(_resolver(), self._document_uri(),
-                                                mime_for(name), name)
-            if uri is None:
-                raise StorageError('could not create "%s"' % name)
-            new_id = self._contract.getDocumentId(uri)
-            written_name = new_id.rsplit('/', 1)[-1]
-            self._child_index()[written_name] = (new_id, mime_for(name))
+            return self._document_uri(document_id), name      # overwrite in place
 
-        descriptor = None
-        try:
-            descriptor = _resolver().openFileDescriptor(uri, 'wt')
-        except Exception:
-            descriptor = None
-        if descriptor is not None:
-            fd = descriptor.detachFd()
-            with os.fdopen(fd, 'wb') as stream:
-                stream.write(data)
-            return written_name
+        uri = self._contract.createDocument(_resolver(), self._document_uri(),
+                                            mime_for(name), name)
+        if uri is None:
+            raise StorageError('could not create "%s"' % name)
+        new_id = self._contract.getDocumentId(uri)
+        written_name = new_id.rsplit('/', 1)[-1]
+        self._child_index()[written_name] = (new_id, mime_for(name))
+        return uri, written_name
 
-        stream = _resolver().openOutputStream(uri, 'wt')
-        if stream is None:
-            raise StorageError('cannot open "%s" for writing' % name)
+    def open_write(self, name):
+        """Return ``(stream, written_name)``; the caller closes the stream."""
+        uri, written_name = self._target_uri(name)
+        return _open_uri_write(uri, name), written_name
+
+    def write(self, name, data):
+        stream, written_name = self.open_write(name)
         try:
             stream.write(data)
-            stream.flush()
         finally:
             stream.close()
         return written_name
+
+    def delete(self, name):
+        """Remove a file we created but could not finish writing."""
+        document_id, mime = self._find_child(name)
+        if document_id is None or mime == DIR_MIME:
+            return False
+        try:
+            removed = self._contract.deleteDocument(_resolver(),
+                                                    self._document_uri(document_id))
+        except Exception:
+            return False
+        if removed:
+            self._child_index().pop(name, None)
+        return bool(removed)
+
+    def descriptor_for_write(self, name):
+        """A seekable ParcelFileDescriptor, for MediaMuxer.
+
+        Returns ``(descriptor, written_name)``.  MediaMuxer seeks backwards to
+        patch the header once it knows the final durations, so the descriptor
+        has to be opened read-write ('rwt'), not write-only.
+        """
+        uri, written_name = self._target_uri(name)
+        try:
+            descriptor = _resolver().openFileDescriptor(uri, 'rwt')
+        except Exception as exc:
+            raise StorageError('cannot open "%s" for writing (%s)' % (name, exc))
+        if descriptor is None:
+            raise StorageError('cannot open "%s" for writing' % name)
+        return descriptor, written_name
 
 
 def folder_from_key(key):
@@ -354,13 +525,28 @@ class LocalFileSelection:
     def exists(self):
         return any(os.path.isfile(path) for path in self.paths)
 
-    def list_images(self):
+    def list_images(self, media=None):
         return [(os.path.basename(path), path) for path in self.paths
-                if formats.is_supported(path)]
+                if _wanted(path, media)]
 
     def read(self, handle):
         with open(handle, 'rb') as stream:
             return stream.read()
+
+    def open_read(self, handle):
+        try:
+            return open(handle, 'rb')
+        except OSError as exc:
+            raise StorageError(str(exc))
+
+    def size_of(self, handle):
+        try:
+            return os.path.getsize(handle)
+        except OSError:
+            return None
+
+    def path_for_read(self, handle):
+        return handle
 
 
 class SafFileSelection:
@@ -390,12 +576,29 @@ class SafFileSelection:
     def exists(self):
         return bool(self.items)
 
-    def list_images(self):
+    def list_images(self, media=None):
         return [(name, uri) for uri, name in self.items
-                if formats.is_supported(name or '')]
+                if _wanted(name or '', media)]
 
     def read(self, handle):
         return read_uri(_Jni.get()['Uri'].parse(handle))
+
+    def open_read(self, handle):
+        return open_uri_read(_Jni.get()['Uri'].parse(handle))
+
+    def size_of(self, handle):
+        return size_of_uri(_Jni.get()['Uri'].parse(handle))
+
+    def descriptor_for_read(self, handle):
+        """A ParcelFileDescriptor, for MediaExtractor."""
+        uri = _Jni.get()['Uri'].parse(handle)
+        try:
+            descriptor = _resolver().openFileDescriptor(uri, 'r')
+        except Exception as exc:
+            raise StorageError('cannot open source for reading (%s)' % exc)
+        if descriptor is None:
+            raise StorageError('cannot open source for reading')
+        return descriptor
 
 
 def describe_selection(count, first_name):
