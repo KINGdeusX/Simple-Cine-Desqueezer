@@ -1,0 +1,96 @@
+name: Build Windows app
+
+# The .exe has to be produced on Windows -- PyInstaller cannot cross-compile --
+# so this workflow is how a release gets built without needing a Windows PC to
+# hand.  Push a tag like v2.0 and the installer and portable build are attached
+# to a GitHub release; every other run leaves them as downloadable artifacts.
+
+on:
+  push:
+    branches: [main, pc-version]
+    paths:
+      - 'PC/**'
+      - '.github/workflows/windows-build.yml'
+    tags: ['v*']
+  pull_request:
+    paths: ['PC/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 Pillow rawpy pyinstaller
+
+      - name: Fetch ExifTool, FFmpeg and DNGLab
+        run: python PC/tools/fetch_binaries.py --platform windows
+
+      - name: Run the test suite
+        working-directory: PC
+        run: python -m unittest discover -s tests -t tests -v
+
+      - name: Smoke-test the application
+        working-directory: PC
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tests/smoke_app.py
+
+      - name: Build the folder and portable executables
+        working-directory: PC
+        run: |
+          $env:DESQUEEZE_ONEFILE = '0'
+          python -m PyInstaller --noconfirm --clean --distpath dist --workpath build tools/desqueeze.spec
+          $env:DESQUEEZE_ONEFILE = '1'
+          python -m PyInstaller --noconfirm --clean --distpath dist --workpath build-onefile tools/desqueeze.spec
+
+      - name: Build the installer
+        run: |
+          # windows-latest ships Inno Setup; fall back to Chocolatey if not.
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc PC\tools\desqueeze.iss
+
+      - name: Verify what was produced
+        run: python PC/tools/verify_build.py PC/dist
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: desqueeze-windows
+          path: |
+            PC/dist/*.exe
+            PC/dist/Desqueeze/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PC/dist/*.exe
+          body: |
+            Desqueeze for Windows.
+
+            * `Desqueeze-*-Setup.exe` -- installer; puts ExifTool, FFmpeg and
+              DNGLab alongside the app so nothing has to be found at runtime.
+            * `Desqueeze-Portable.exe` -- single file, nothing to install.
+
+            The bundled FFmpeg is a GPL build (it includes x264/x265); see
+            `docs/LICENSING.txt`.

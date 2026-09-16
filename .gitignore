@@ -31,3 +31,11 @@ ANDROID/data/*.ttf
 ANDROID/icon.png
 ANDROID/icon_foreground.png
 ANDROID/presplash.png
+
+# PC build (see PC/README.md) -- intermediates and downloaded binaries only.
+PC/vendor/
+PC/dist/
+PC/build/
+PC/build-onefile/
+PC/.venv/
+PC/logs/

@@ -1,0 +1,84 @@
+Desqueeze -- licensing
+======================
+
+The application
+---------------
+
+Simple Cine Desqueezer (this project's own source code, on both Windows and
+Android) is released under the MIT Licence.
+
+    Copyright (c) KINGdeusX
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+
+Bundled components
+------------------
+
+The Windows build ships several independent programs so that nothing has to be
+installed or hunted for. They keep their own licences, and the most important
+consequence is spelled out below.
+
+FFmpeg -- GPL v3
+    https://ffmpeg.org/
+    The build included here is compiled with x264 and x265, both of which are
+    GPL-licensed. That makes the FFmpeg binary GPL v3, and therefore makes the
+    *distributed bundle* (installer or portable executable) subject to GPL v3
+    terms as a whole, even though this project's own source remains MIT.
+
+    In practice, if you redistribute the built application you must:
+      - pass on these licence terms, and
+      - make the corresponding source for FFmpeg available. The upstream
+        sources are at https://ffmpeg.org/download.html and the exact build is
+        identified in the application's About information.
+
+    If you would rather not take on GPL obligations, build without FFmpeg. The
+    application degrades gracefully: the video tab's metadata route keeps
+    working (it is pure Python), and only the re-encode option disappears.
+
+ExifTool -- Perl Artistic Licence / GPL v1+ (dual)
+    https://exiftool.org/
+    Copyright Phil Harvey. Redistributed unmodified.
+
+DNGLab -- LGPL v2.1
+    https://github.com/dnglab/dnglab
+    Redistributed unmodified as a separate executable.
+
+LibRaw (via rawpy) -- LGPL v2.1 / CDDL
+    https://www.libraw.org/
+    Used to develop raw files when a rendered JPEG is requested.
+
+Qt / PyQt6 -- GPL v3 (open-source edition)
+    https://www.qt.io/  |  https://riverbankcomputing.com/software/pyqt/
+    The user interface toolkit. PyQt6's open-source edition is GPL v3, which is
+    a second reason the distributed Windows bundle carries GPL terms.
+
+Pillow -- MIT-CMU
+    https://python-pillow.org/
+
+Python -- PSF Licence
+    https://www.python.org/
+
+
+Summary
+-------
+
+  This repository's source            MIT
+  The distributed Windows build       GPL v3, because of FFmpeg and PyQt6
+  The Android APK                     MIT (it bundles neither of those)

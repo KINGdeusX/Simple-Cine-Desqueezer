@@ -4,74 +4,55 @@
   <img src="icon.png" alt="Simple Cine Desqueezer Logo" width="180"/>
 </p>
 
-An elegant PyQt6 desktop application for batch desqueezing anamorphic DNG cinema files using `exiftool`.
+Batch-desqueeze anamorphic footage and stills. Two applications, developed
+independently in their own folders:
 
-## Features
+| | [**PC**](PC/) — Windows | [**Android**](ANDROID/) — phone |
+|---|---|---|
+| Built with | PyQt6 | Kivy |
+| Raw stills | Canon CR2/CR3/CRW, Nikon NEF/NRW, Sony ARW/SR2/SRF, Fujifilm RAF, DNG | DNG, ARW/SR2/SRF, NEF/NRW |
+| Rendered stills | JPEG, PNG, TIFF | JPEG, PNG, TIFF |
+| Video | MP4 with audio | MP4, MOV |
+| Photo modes | tag, or actually stretch | tag raw, stretch rendered |
+| Photo output | keep original, DNG (optionally compressed), or JPEG | keep original |
+| Video | `pasp` metadata, or FFmpeg re-encode (H.265/H.264, your bitrate) | `pasp` metadata, or hardware HEVC re-encode |
+| Helper tools | ExifTool, FFmpeg and DNGLab bundled — nothing to find | none needed; pure Python + the phone's own codecs |
+| Ships as | installer + portable `.exe` | signed `.apk` |
 
-- **Preset Lens Ratios**: Built-in support for popular anamorphic squeeze factors:
-  - `1.25x` — Sirui / Entry Anamorphic Lenses
-  - `1.33x` — Canon C70 / C300 / C500 / Sigma Cine / DJI
-  - `1.5x` — Kowa / Vintage Anamorphic / Iscorama 36
-  - `1.6x` — Lomo Square Front / Vintage Glass
-  - `1.79x` — RED DSMC Anamorphic Mode
-  - `1.8x` — Panasonic GH5/GH6 Anamorphic Mode
-  - `2.0x` — Panavision / Hawk / Cooke / Classic Anamorphic
-  - `2.39x` — Ultra Panavision 70
-  - Custom X/Y Squeeze ratios
-- **Gold & Black UI with Custom Icon**: Sleek modern interface with dedicated application icon.
-- **Non-blocking Multi-threaded Processing**: Uses Python worker threads and ExifTool to batch process DNG files smoothly without freezing the UI.
-- **Batch Processing**: Select input directories containing `.dng` / `.DNG` files and automatically write updated metadata to target output directories.
-- **ExifTool Integration**: Automatic detection or manual configuration of `exiftool.exe`.
+Both keep the same nine anamorphic lens presets, custom X/Y ratios, and the same
+gold-on-black look. Neither ever modifies your originals.
 
-## Android
+## Which one does what
 
-There is now an Android port in [`ANDROID/`](ANDROID/) — same presets, same
-gold-on-black look, built with Kivy, shipping a ready-to-sideload `.apk`.
+Raw files **cannot** be resized without destroying what makes them raw, nothing
+reads `DefaultScale` from a JPEG, and a two-hour clip cannot be re-encoded in
+the time it takes to write four bytes. So each format gets the only treatment
+that actually works for it, and where a request cannot mean what it says the app
+explains rather than silently doing something else.
 
-It also goes further than the desktop app. Alongside DNG it accepts **Sony ARW**
-and **Nikon NEF** raw (tagged the same way, verified byte-for-byte against real
-ExifTool); **PNG / JPEG / TIFF**, whose pixels are physically stretched so they
-are genuinely desqueezed in any viewer; and **MP4 / MOV video**, which gets the
-`pasp` pixel-aspect atom written losslessly, or can be re-encoded to HEVC at the
-stretched size using the phone's hardware encoder. Photos and video have
-separate tabs, and you select individual files rather than a folder.
-See [`ANDROID/README.md`](ANDROID/README.md).
+## Getting it
 
-The desktop app below is unchanged and developed independently of it.
+- **Windows** — grab the installer or portable build from
+  [Releases](https://github.com/KINGdeusX/Simple-Cine-Desqueezer/releases), or
+  see [`PC/README.md`](PC/README.md) to build it.
+- **Android** — the APK is in [`ANDROID/`](ANDROID/); see
+  [`ANDROID/README.md`](ANDROID/README.md).
 
-## Requirements
+## Repository layout
 
-- **Python 3.8+**
-- **ExifTool** (Placed in the application directory or path specified in app settings)
-
-## Quick Start
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/KINGdeusX/Simple-Cine-Desqueezer.git
-   cd Simple-Cine-Desqueezer
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application**:
-   ```bash
-   python app.py
-   ```
-
-## Building Executable
-
-To build a standalone executable using PyInstaller:
-
-```bash
-pyinstaller app.spec
+```
+PC/            Windows app, build tooling and tests
+ANDROID/       Android app, build tooling and tests
+docs/          changelog and licensing
+icon.png       shared artwork
 ```
 
-The output executable will be generated inside the `dist/` directory.
+Changes are recorded in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
-## License
+## Licence
 
-MIT License
+This repository's source is **MIT**.
+
+The **distributed Windows build is GPL v3**, because it bundles FFmpeg (compiled
+with x264/x265) and PyQt6. The Android APK bundles neither and stays MIT. Full
+detail in [`docs/LICENSING.txt`](docs/LICENSING.txt).

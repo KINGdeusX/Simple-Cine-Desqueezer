@@ -1,0 +1,7 @@
+# Runtime and build dependencies for the Windows app.
+# The helper binaries (ExifTool, FFmpeg, DNGLab) are not pip packages --
+# fetch them with: python PC/tools/fetch_binaries.py --platform windows
+PyQt6>=6.6
+Pillow>=10.0
+rawpy>=0.19
+pyinstaller>=6.0
