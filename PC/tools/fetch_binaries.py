@@ -43,6 +43,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 PC_DIR = os.path.dirname(HERE)
 VENDOR = os.path.join(PC_DIR, 'vendor')
+PLATFORM_HERE = 'windows' if sys.platform.startswith('win') else 'linux'
 
 # exiftool.org rejects unknown clients, so present as a normal browser.
 USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -169,12 +170,45 @@ def exiftool_windows_url():
     return None, version
 
 
+def _real_exiftool_under(root):
+    """Find Chocolatey's actual ExifTool, not the shim that stands in for it.
+
+    ``C:\\ProgramData\\chocolatey\\bin\\exiftool.exe`` is a few-hundred-kilobyte
+    launcher that re-execs ``..\\lib\\exiftool\\tools\\...``.  Copying it into our
+    vendor folder produces something that runs and then cannot find itself,
+    which is precisely how this failed the first time.  The real executable
+    lives under lib and has its Perl tree beside it.
+    """
+    best = None
+    for folder, _subfolders, files in os.walk(root):
+        if os.sep + 'bin' + os.sep in folder + os.sep:
+            continue                       # that is where the shims live
+        for name in files:
+            lowered = name.lower()
+            if not (lowered == 'exiftool.exe'
+                    or (lowered.startswith('exiftool(')
+                        and lowered.endswith('.exe'))):
+                continue
+            path = os.path.join(folder, name)
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                continue
+            # The standalone build is several megabytes and ships an
+            # "exiftool_files" directory; a shim is small and ships nothing.
+            has_runtime = os.path.isdir(os.path.join(folder, 'exiftool_files'))
+            score = (1 if has_runtime else 0, size)
+            if best is None or score > best[0]:
+                best = (score, path)
+    return best[1] if best else None
+
+
 def exiftool_from_chocolatey(destination):
     """Last resort on Windows: let Chocolatey fetch it.
 
     GitHub's Windows runners ship Chocolatey, and it publishes an ExifTool
-    package, so this keeps the build working on days when SourceForge is
-    refusing automated downloads.
+    package, so this keeps the build working on days when SourceForge refuses
+    automated downloads.
     """
     if not sys.platform.startswith('win'):
         return None
@@ -190,27 +224,24 @@ def exiftool_from_chocolatey(destination):
               file=sys.stderr)
         return None
 
-    found = shutil.which('exiftool')
+    roots = [os.environ.get('ChocolateyInstall') or r'C:\ProgramData\chocolatey']
+    found = None
+    for root in roots:
+        library = os.path.join(root, 'lib', 'exiftool')
+        if os.path.isdir(library):
+            found = _real_exiftool_under(library)
+        if found:
+            break
     if not found:
-        for root in (r'C:\ProgramData\chocolatey\bin',
-                     r'C:\ProgramData\chocolatey\lib\exiftool\tools'):
-            for folder, _subfolders, files in os.walk(root):
-                for name in files:
-                    if name.lower() == 'exiftool.exe':
-                        found = os.path.join(folder, name)
-                        break
-                if found:
-                    break
-            if found:
-                break
-    if not found:
+        print('  chocolatey installed ExifTool but the real executable could '
+              'not be located under lib/', file=sys.stderr)
         return None
 
     target = os.path.join(destination, 'exiftool')
+    shutil.rmtree(target, ignore_errors=True)
     os.makedirs(target, exist_ok=True)
-    # Copy the whole tools folder: the standalone build needs its Perl tree
-    # beside the executable.
-    source_dir = os.path.dirname(os.path.realpath(found))
+    # Copy the whole folder: the standalone build needs its Perl tree beside it.
+    source_dir = os.path.dirname(found)
     for entry in os.listdir(source_dir):
         source = os.path.join(source_dir, entry)
         destination_path = os.path.join(target, entry)
@@ -218,10 +249,14 @@ def exiftool_from_chocolatey(destination):
             shutil.copytree(source, destination_path, dirs_exist_ok=True)
         else:
             shutil.copy2(source, destination_path)
-    if not os.path.exists(os.path.join(target, 'exiftool.exe')):
-        shutil.copy2(os.path.realpath(found),
-                     os.path.join(target, 'exiftool.exe'))
-    return 'chocolatey'
+
+    for name in os.listdir(target):
+        lowered = name.lower()
+        if lowered.startswith('exiftool(') and lowered.endswith('.exe'):
+            os.replace(os.path.join(target, name),
+                       os.path.join(target, 'exiftool.exe'))
+    return 'chocolatey' if os.path.exists(
+        os.path.join(target, 'exiftool.exe')) else None
 
 
 def exiftool_windows(destination):
@@ -390,6 +425,42 @@ def dnglab(destination, platform):
 
 # --- driver -----------------------------------------------------------------
 
+def verify(destination, platform, wanted):
+    """Run each tool once, here, where a broken layout is obvious.
+
+    Downloading the right bytes is not the same as ending up with something
+    that runs -- a Chocolatey shim copied out of its folder will install
+    perfectly and then fail on the first file the app touches.  Better to find
+    that now than three steps later in somebody's test output.
+    """
+    if platform != PLATFORM_HERE:
+        print('  (built for %s; cannot run those binaries on this machine)'
+              % platform)
+        return
+
+    sys.path.insert(0, PC_DIR)
+    import importlib
+    import toolbox
+    importlib.reload(toolbox)
+
+    checks = [('exiftool', toolbox.EXIFTOOL), ('ffmpeg', toolbox.FFMPEG),
+              ('dnglab', toolbox.DNGLAB)]
+    problems = []
+    for key, tool in checks:
+        if key not in wanted:
+            continue
+        version = tool.version() if tool.available else None
+        if version:
+            print('  verified %-9s %s' % (key, version))
+        else:
+            problems.append(key)
+    if problems:
+        raise SystemExit(
+            'these tools were installed but will not run: %s\n'
+            'The download probably produced the wrong layout -- check %s'
+            % (', '.join(problems), destination))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--platform', choices=('windows', 'linux'),
@@ -416,6 +487,8 @@ def main():
                               else ffmpeg_linux(destination))
     if 'dnglab' in wanted:
         versions['dnglab'] = dnglab(destination, arguments.platform)
+
+    verify(destination, arguments.platform, wanted)
 
     manifest = os.path.join(destination, 'versions.json')
     existing = {}
