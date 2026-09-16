@@ -51,8 +51,10 @@ Changes are recorded in [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ## Licence
 
-This repository's source is **MIT**.
+**GNU General Public Licence v3** — see [`LICENSE`](LICENSE).
 
-The **distributed Windows build is GPL v3**, because it bundles FFmpeg (compiled
-with x264/x265) and PyQt6. The Android APK bundles neither and stays MIT. Full
-detail in [`docs/LICENSING.txt`](docs/LICENSING.txt).
+GPL v3 is what makes this distributable as a working product: the Windows build
+bundles FFmpeg (with x264/x265) and PyQt6, both GPL, so a bundle containing them
+has to carry GPL terms. You may use it commercially, sell it, and modify it;
+you must pass on the licence and make the source available to anyone you give a
+binary to. Details in [`docs/LICENSING.txt`](docs/LICENSING.txt).

@@ -56,9 +56,9 @@ Both an **Inno Setup installer** and a **single-file portable .exe**, built by
 on a Windows runner.
 
 ### Licensing
-The bundled FFmpeg is a GPL build (x264/x265) and PyQt6's open-source edition is
-GPL v3, so **the distributed Windows bundle is GPL v3** while this repository's
-own source stays MIT. See `docs/LICENSING.txt`.
+The project moved from MIT to **GPL v3**, which is the licence that permits
+packaging and distributing a bundle containing FFmpeg (x264/x265) and PyQt6.
+See `LICENSE` and `docs/LICENSING.txt`.
 
 ### Tested
 46 unit tests plus a 33-check headless drive of the real window, run against the

@@ -20,9 +20,9 @@ Everything lands in ``PC/vendor/<platform>/`` and is ignored by git; the release
 workflow fetches it fresh on the build machine.
 
 LICENSING: the FFmpeg build pulled here includes x264 and x265 and is therefore
-GPL. That does not change this project's own MIT licence, but a distributed
-bundle containing it must carry the GPL terms -- ``tools/desqueeze.iss`` ships
-the licence text alongside the binary for exactly that reason.
+GPL, which is why this project is GPL v3 -- that is the licence under which a
+bundle containing it can be distributed. ``tools/desqueeze.iss`` presents the
+licence during installation and ships it alongside the binary.
 """
 
 from __future__ import annotations

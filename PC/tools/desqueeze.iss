@@ -25,7 +25,7 @@ AppUpdatesURL={#AppURL}/releases
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-LicenseFile=..\..\docs\LICENSING.txt
+LicenseFile=..\..\LICENSE
 OutputDir=..\dist
 OutputBaseFilename=Desqueeze-{#AppVersion}-Setup
 SetupIconFile=..\..\icon.ico
@@ -49,6 +49,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 ; The whole PyInstaller folder, including vendor\ with the helper binaries.
 Source: "..\dist\Desqueeze\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; \
+    Flags: ignoreversion
 Source: "..\..\docs\LICENSING.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; DestName: "README.txt"; \
     Flags: ignoreversion

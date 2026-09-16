@@ -127,11 +127,10 @@ xvfb-run -a python tests/smoke_app.py                # drives the real window
 
 ## Licensing, in one line
 
-This project's source is MIT, but **the distributed Windows build is GPL v3**,
-because it bundles FFmpeg (compiled with x264/x265) and PyQt6. Full detail and
-the practical consequences are in [`docs/LICENSING.txt`](../docs/LICENSING.txt).
-Building without FFmpeg avoids the FFmpeg half of that: the video metadata route
-is pure Python and keeps working, and only the re-encode option disappears.
+**GPL v3** — the licence that lets this be packaged and shipped, because the
+build bundles FFmpeg (x264/x265) and PyQt6. Distribute it freely, commercially
+if you like; pass on the licence and point recipients at the source. Details in
+[`docs/LICENSING.txt`](../docs/LICENSING.txt).
 
 ## Known limitations
 
