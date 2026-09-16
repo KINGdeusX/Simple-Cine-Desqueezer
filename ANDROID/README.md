@@ -19,8 +19,8 @@ the time it takes to write four bytes — so each format gets the only treatment
 that actually works for it. `formats.py` is the single place that decides which
 path a file takes.
 
-The desktop app is untouched: it still lives in the repository root (`app.py`),
-and everything Android lives in this folder.
+The Windows app lives in [`PC/`](../PC/) and is developed independently;
+everything Android is in this folder.
 
 ```
 ANDROID/
@@ -48,7 +48,7 @@ Copy the `.apk` in this folder to the phone and open it; Android will ask you to
 allow installing from this source the first time. Or, over USB:
 
 ```bash
-adb install -r ANDROID/desqueeze-1.0-arm64-v8a-release.apk
+adb install -r ANDROID/desqueeze-1.2-arm64-v8a-release.apk
 ```
 
 Requires **Android 10 (API 29) or newer** on a **64-bit ARM** device — which is
@@ -329,3 +329,12 @@ the Android 16/17 requirements that usually break older builds:
   refuse and skip.
 * Only the source folder itself is scanned, not its subfolders — same as the
   desktop app's `*.dng` glob.
+
+## Licence
+
+**GNU General Public Licence v3** — see [`LICENSE`](../LICENSE) at the
+repository root.
+
+Unlike the Windows build, the APK bundles neither FFmpeg nor PyQt6 — it is pure
+Python plus the phone's own codecs — so nothing in it forces copyleft. It is
+covered by the project's GPL v3 for consistency.

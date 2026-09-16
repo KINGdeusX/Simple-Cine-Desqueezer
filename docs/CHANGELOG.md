@@ -62,10 +62,32 @@ See `LICENSE` and `docs/LICENSING.txt`.
 
 ### Tested
 46 unit tests plus a 33-check headless drive of the real window, run against the
-real bundled binaries. **The Windows `.exe` itself has not been executed** — it
-cannot be built on the Linux machine this was developed on, since PyInstaller
-does not cross-compile. `PC/tools/verify_build.py` checks the packaged output on
-whichever machine builds it.
+real bundled binaries, and then a full packaging run on a Windows CI runner
+producing the installer and the portable executable.
+
+The `.exe` has been **built and verified, but not launched by hand** — it cannot
+be run on the Linux machine it was developed on. `PC/tools/verify_build.py`
+checks the packaged output on the machine that builds it.
+
+### Build fixes needed to get the Windows packaging working
+Each of these failed a CI run before being found:
+
+- **exiftool.org does not host the Windows zip.** It links to SourceForge, which
+  answers automated requests with an HTML interstitial. The fetcher treated any
+  HTTP 200 as success and handed markup to `ZipFile`. Downloads are now
+  validated as real archives, the URL is scraped from exiftool.org rather than
+  guessed, and the direct SourceForge mirrors are tried in turn.
+- **The Chocolatey fallback copied a shim.** `chocolatey\bin\exiftool.exe` is a
+  launcher that re-execs the real binary under `lib\`; copied into `vendor\` it
+  started and could not find itself. It now finds the real executable under
+  `lib\exiftool\tools` and copies the whole folder, Perl tree included.
+- **The fetch step now runs each tool once** before reporting success, so a
+  broken layout fails where it happens rather than three steps later.
+- **CI failures were unreadable.** The Actions log API needs admin rights, so a
+  failing build was opaque. Test and smoke steps now attach their output to a
+  check-run annotation, which is public.
+- **Artifacts are published separately** — installer, portable build and the
+  unpacked folder — instead of one combined archive.
 
 ---
 
