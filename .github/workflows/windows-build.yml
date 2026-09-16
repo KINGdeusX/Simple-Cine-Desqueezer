@@ -41,18 +41,44 @@ jobs:
       - name: Fetch ExifTool, FFmpeg and DNGLab
         run: python PC/tools/fetch_binaries.py --platform windows
 
+      # Workflow logs need admin rights to read through the API, but check-run
+      # annotations do not -- so a failure is surfaced as an annotation with the
+      # output attached, which makes the build diagnosable from outside.
       - name: Run the test suite
         working-directory: PC
-        run: python -m unittest discover -s tests -t tests -v
+        shell: pwsh
+        run: |
+          $output = python -m unittest discover -s tests -t tests -v 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $output
+          if ($code -ne 0) {
+            $tail = $output -replace "`r", ''
+            if ($tail.Length -gt 7000) { $tail = $tail.Substring($tail.Length - 7000) }
+            $encoded = $tail -replace "`n", '%0A'
+            Write-Host "::error title=Unit tests failed::$encoded"
+            exit 1
+          }
 
       - name: Smoke-test the application
         working-directory: PC
+        shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tests/smoke_app.py
+        run: |
+          $output = python tests/smoke_app.py 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $output
+          if ($code -ne 0) {
+            $tail = $output -replace "`r", ''
+            if ($tail.Length -gt 7000) { $tail = $tail.Substring($tail.Length - 7000) }
+            $encoded = $tail -replace "`n", '%0A'
+            Write-Host "::error title=Smoke test failed::$encoded"
+            exit 1
+          }
 
       - name: Build the folder and portable executables
         working-directory: PC
+        shell: pwsh
         run: |
           $env:DESQUEEZE_ONEFILE = '0'
           python -m PyInstaller --noconfirm --clean --distpath dist --workpath build tools/desqueeze.spec
