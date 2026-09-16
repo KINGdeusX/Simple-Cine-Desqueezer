@@ -7,13 +7,15 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main, pc-version]
+    branches: [main, android-port, pc-version]
     paths:
       - 'PC/**'
       - '.github/workflows/windows-build.yml'
     tags: ['v*']
   pull_request:
     paths: ['PC/**']
+  # Note: GitHub only offers the manual "Run workflow" button for workflows on
+  # the default branch, so until this is merged to main, use a push or a tag.
   workflow_dispatch:
 
 permissions:
